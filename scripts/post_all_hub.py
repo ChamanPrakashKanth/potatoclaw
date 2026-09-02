@@ -38,6 +38,28 @@ from shorts_generator import (
     PEXELS_API_KEY
 )
 
+def open_url_in_browser(url):
+    """Robustly opens a URL on Windows using os.startfile, cmd start, and chrome fallback."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(url)
+            return True
+    except Exception:
+        pass
+        
+    try:
+        subprocess.run(["cmd.exe", "/c", "start", "", url], shell=False)
+        return True
+    except Exception:
+        pass
+        
+    try:
+        webbrowser.open(url, new=2)
+        return True
+    except Exception:
+        pass
+    return False
+
 def run_x_post_workflow(category="tech", auto_open=True):
     print(f"\n[*] Curating #1 breaking story in '{category.upper()}' for X (Twitter)...")
     articles = fetch_category_news(category, max_items=1)
@@ -66,8 +88,10 @@ def run_x_post_workflow(category="tech", auto_open=True):
         try:
             choice = input("\nOpen X Web Composer now? [Y/n]: ").strip().lower()
             if choice != 'n':
-                webbrowser.open("https://x.com/compose/post")
-                print("[✔] Opened https://x.com/compose/post in browser (Press Ctrl+V to paste & post).")
+                encoded = urllib.parse.quote(post_text)
+                intent_url = f"https://x.com/intent/post?text={encoded}"
+                open_url_in_browser(intent_url)
+                print("[✔] Opened X Post Composer in browser! Press Ctrl+V to paste & post.")
         except EOFError:
             pass
         
@@ -107,8 +131,9 @@ def run_shorts_workflow(category="tech", auto_open=True):
         try:
             choice = input("\nOpen YouTube Studio Upload in browser? [Y/n]: ").strip().lower()
             if choice != 'n':
-                webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
-                print("[✔] Opened YouTube Studio in browser. Drag & drop the selected MP4 video!")
+                open_url_in_browser("https://studio.youtube.com")
+                open_url_in_browser("https://youtube.com/upload")
+                print("[✔] Opened YouTube Studio in browser! Drag & drop the selected MP4 video.")
         except EOFError:
             pass
         
@@ -149,14 +174,22 @@ def run_dual_post_workflow(category="tech"):
     print(f" 🎬 Video File   : {video_path}")
     print("=" * 65)
     
-    act = input("Open browsers? [1: Both X & YouTube | 2: X only | 3: YouTube only | 4: Skip]: ").strip()
+    try:
+        act = input("Open browsers? [1: Both X & YouTube | 2: X only | 3: YouTube only | 4: Skip]: ").strip()
+    except EOFError:
+        act = '1'
+        
     if act in ['1', '']:
-        webbrowser.open("https://x.com/compose/post")
-        webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
+        encoded = urllib.parse.quote(x_post)
+        open_url_in_browser(f"https://x.com/intent/post?text={encoded}")
+        open_url_in_browser("https://studio.youtube.com")
+        open_url_in_browser("https://youtube.com/upload")
     elif act == '2':
-        webbrowser.open("https://x.com/compose/post")
+        encoded = urllib.parse.quote(x_post)
+        open_url_in_browser(f"https://x.com/intent/post?text={encoded}")
     elif act == '3':
-        webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
+        open_url_in_browser("https://studio.youtube.com")
+        open_url_in_browser("https://youtube.com/upload")
 
 def show_interactive_hub():
     while True:

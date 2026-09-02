@@ -208,6 +208,28 @@ def format_fallback_single_post(category, article):
         
     return f"{header}: {title}\n\n{link_section}{tags}"
 
+def open_url_in_browser(url):
+    """Robustly opens a URL on Windows using os.startfile, cmd start, and chrome fallback."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(url)
+            return True
+    except Exception:
+        pass
+        
+    try:
+        subprocess.run(["cmd.exe", "/c", "start", "", url], shell=False)
+        return True
+    except Exception:
+        pass
+        
+    try:
+        webbrowser.open(url, new=2)
+        return True
+    except Exception:
+        pass
+    return False
+
 def copy_to_clipboard(text):
     try:
         subprocess.run(['clip.exe'], input=text.strip().encode('utf-16le'), check=True)
@@ -218,8 +240,11 @@ def copy_to_clipboard(text):
 def open_x_intent(text):
     encoded = urllib.parse.quote(text)
     url = f"https://x.com/intent/post?text={encoded}"
-    print(f"[*] Opening Chrome with pre-filled X post...")
-    webbrowser.open(url)
+    print(f"[*] Opening default browser with pre-filled X post...")
+    success = open_url_in_browser(url)
+    if not success:
+        open_url_in_browser("https://x.com/compose/post")
+    return success
 
 def save_draft(text, category, title):
     drafts_dir = os.path.join(os.path.dirname(__file__), "..", "news_drafts")

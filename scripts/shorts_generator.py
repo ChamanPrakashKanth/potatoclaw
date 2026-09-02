@@ -267,6 +267,28 @@ def copy_to_clipboard(text):
     except Exception:
         return False
 
+def open_url_in_browser(url):
+    """Robustly opens a URL on Windows using os.startfile, cmd start, and chrome fallback."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(url)
+            return True
+    except Exception:
+        pass
+        
+    try:
+        subprocess.run(["cmd.exe", "/c", "start", "", url], shell=False)
+        return True
+    except Exception:
+        pass
+        
+    try:
+        webbrowser.open(url, new=2)
+        return True
+    except Exception:
+        pass
+    return False
+
 def open_video_in_folder(path):
     try:
         subprocess.run(['explorer.exe', '/select,', os.path.normpath(path)])
@@ -347,18 +369,21 @@ def run_shorts_menu():
         copy_to_clipboard(caption)
         
         if action == 'x':
-            webbrowser.open("https://x.com/compose/post")
+            open_url_in_browser("https://x.com/compose/post")
             open_video_in_folder(video_path)
-            print("[✔] Opened X composer in browser and selected video in folder!")
+            print("\n[✔] Opened X composer in browser and highlighted video in folder!")
+            print("[✔] Drag-and-drop the video file and paste your caption (Ctrl + V).")
         elif action == 'y':
-            webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
+            open_url_in_browser("https://studio.youtube.com")
+            open_url_in_browser("https://youtube.com/upload")
             open_video_in_folder(video_path)
-            print("[✔] Opened YouTube Studio upload in browser and selected video in folder!")
+            print("\n[✔] Opened YouTube Studio in browser and highlighted video in folder!")
+            print("[✔] Drag-and-drop the video file and paste title/description (Ctrl + V).")
         elif action == 'm':
             continue
         else:
             open_video_in_folder(video_path)
-            print("[✔] Caption copied to clipboard and folder opened!")
+            print("[✔] Caption copied to clipboard and video highlighted in folder!")
             
         try:
             input("\nPress Enter to continue...")
