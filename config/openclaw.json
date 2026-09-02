@@ -1,0 +1,54 @@
+{
+  "$schema": "https://docs.openclaw.ai/schema.json",
+  "potatoMode": true,
+  "browser": {
+    "enabled": true,
+    "defaultProfile": "chrome",
+    "profiles": {
+      "chrome": {
+        "cdpUrl": "http://127.0.0.1:9222",
+        "attachOnly": true
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "spark": {
+        "baseUrl": "http://127.0.0.1:11435/v1",
+        "apiKey": "local-key",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "spark-x2.5-4b:latest",
+            "name": "Spark-X2.5-4B (BWM Low-VRAM)",
+            "input": ["text"],
+            "contextTokens": 2048,
+            "params": {
+              "temperature": 0.7
+            }
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "potatoMode": true,
+      "model": {
+        "primary": "spark/spark-x2.5-4b:latest"
+      },
+      "models": {
+        "spark/spark-x2.5-4b:latest": {}
+      },
+      "modelPolicy": {
+        "allow": [
+          "spark/spark-x2.5-4b:latest"
+        ]
+      },
+      "experimental": {
+        "localModelLean": true,
+        "potatoMode": true
+      }
+    }
+  }
+}

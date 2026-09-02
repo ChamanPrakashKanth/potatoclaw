@@ -1,0 +1,14 @@
+FROM C:\Users\user\Downloads\Model\Spark-X2.5-4B-Q4_K_M.gguf
+
+# Low Context: 2048 tokens for ultra-low KV-cache RAM/VRAM footprint
+PARAMETER num_ctx 2048
+
+# GPU Offloading: Offload 26 layers to 4GB GTX 1650 VRAM (~2.4 GB)
+PARAMETER num_gpu 26
+
+# CPU Offloading: Offload remaining computation across 6 CPU cores
+PARAMETER num_thread 6
+
+# Generation parameters
+PARAMETER temperature 0.7
+PARAMETER top_p 0.95
