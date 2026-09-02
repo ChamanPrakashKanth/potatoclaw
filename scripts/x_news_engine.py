@@ -110,31 +110,35 @@ def fetch_category_news(category, max_items=5):
 
 def generate_single_story_x_post(category, article):
     """
-    Crafts ONE high-impact post tailored strictly under 280 characters for Non-Premium X users.
+    Crafts ONE high-impact post tailored strictly under 280 characters for Non-Premium X users
+    using PotatoClaw V2 Bounded Working Memory.
     """
-    prompt = f"""You are a professional science & defense curator on X.
-Create ONE single viral tweet (STRICTLY UNDER 250 CHARACTERS) for this top news story:
+    link = article.get('link', '').strip()
+    link_section = f"\n\n🔗 {link}" if link else ""
+    
+    prompt = f"""[TASK STATE (BMW)]
+GOAL: Create ONE viral X (Twitter) post for this single story.
+CATEGORY: {category.upper()}
+HEADLINE: {article['title']}
+SOURCE: {article['source']}
+FACTS: {article['desc'][:160]}
 
-Headline: {article['title']}
-Source: {article['source']}
-Details: {article['desc']}
-
-Rules:
-1. Start with an impactful emoji + hook.
-2. Clearly state what happened and why it matters in 1-2 punchy sentences.
-3. End with 2-3 focused hashtags like #{category.capitalize()} #AI #Quantum #DefenseTech.
-4. Total length MUST be UNDER 250 characters so it fits non-premium Twitter.
-5. Output ONLY the tweet text. No preamble."""
+RULES:
+1. Under 210 characters text (plus link).
+2. Start with an emoji hook (🚀 / 🛡️ / ⚛️).
+3. State what happened and why it matters in 1-2 punchy sentences.
+4. End with 2 hashtags e.g. #{category.capitalize()} #Tech.
+5. Output ONLY the tweet text. No markdown fences."""
 
     try:
         payload = {
             "model": MODEL_ID,
             "messages": [
-                {"role": "system", "content": "You are OpenClaw X-Engine. Output ONLY the finished single tweet under 250 chars."},
+                {"role": "system", "content": "You are PotatoClaw V2 X-Engine. Output ONLY the single post text."},
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 120,
-            "temperature": 0.3
+            "max_tokens": 100,
+            "temperature": 0.2
         }
         
         req = urllib.request.Request(
@@ -143,12 +147,27 @@ Rules:
             headers={"Content-Type": "application/json"}
         )
         
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=25) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             msg = data['choices'][0]['message']
-            content = msg.get('content', '').strip()
-            if content and len(content) <= X_FREE_CHAR_LIMIT:
-                return content
+            content = (msg.get('content') or msg.get('reasoning_content') or '').strip()
+            
+            # Remove any thinking block if present
+            if "</think>" in content:
+                content = content.split("</think>")[-1].strip()
+            content = content.replace("```json", "").replace("```", "").strip().strip('"')
+            
+            if content:
+                # Append link if not already present
+                if link and link not in content:
+                    full_post = f"{content}{link_section}"
+                else:
+                    full_post = content
+                    
+                # Validate length (Twitter calculates URLs as 23 chars)
+                effective_len = len(re.sub(r'https?://\S+', 'X'*23, full_post))
+                if effective_len <= X_FREE_CHAR_LIMIT:
+                    return full_post
     except Exception:
         pass
         

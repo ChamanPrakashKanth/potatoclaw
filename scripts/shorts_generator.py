@@ -205,11 +205,60 @@ def create_shorts_video(category, article, pexels_key):
     return final_video_path
 
 def generate_shorts_captions(category, article, video_path):
+    """
+    Generates YouTube Shorts & X Video captions using PotatoClaw V2 BMW State.
+    """
     title = article['title']
     link = article.get('link', '')
     
-    caption = f"🔥 {title}\n\nVia {article['source']}\n🔗 {link}\n\n#Shorts #Tech #DefenseTech #Physics #AI #Science #Innovation"
-    return caption
+    prompt = f"""[TASK STATE (BMW)]
+GOAL: Create a high-converting YouTube Shorts title & description for this video.
+CATEGORY: {category.upper()}
+HEADLINE: {title}
+SOURCE: {article['source']}
+
+RULES:
+1. Title line with an engaging emoji (under 60 characters).
+2. 1-sentence hook explaining what happened.
+3. Relevant hashtags: #Shorts #{category.capitalize()} #Tech #AI #Viral.
+4. Output ONLY the title and description."""
+
+    try:
+        payload = {
+            "model": "spark-x2.5-4b:latest",
+            "messages": [
+                {"role": "system", "content": "You are PotatoClaw V2 Shorts AI. Output ONLY the title and description."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 120,
+            "temperature": 0.2
+        }
+        req = urllib.request.Request(
+            "http://127.0.0.1:11435/v1/chat/completions",
+            data=json.dumps(payload).encode('utf-8'),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            msg = data['choices'][0]['message']
+            content = (msg.get('content') or msg.get('reasoning_content') or '').strip()
+            if "</think>" in content:
+                content = content.split("</think>")[-1].strip()
+            content = content.replace("```", "").strip().strip('"')
+            if content and len(content) > 20:
+                if link and link not in content:
+                    content += f"\n\n🔗 Source: {link}"
+                return content
+    except Exception:
+        pass
+        
+    tag_map = {
+        "tech": "#Shorts #Tech #AI #DeepTech #Innovation",
+        "defence": "#Shorts #DefenseTech #Military #Aerospace #Security",
+        "physics": "#Shorts #Physics #Quantum #Science #Space"
+    }
+    tags = tag_map.get(category.lower(), "#Shorts #Science #Innovation")
+    return f"🔥 {title}\n\nVia {article['source']}\n🔗 {link}\n\n{tags}"
 
 def copy_to_clipboard(text):
     try:
