@@ -1,0 +1,141 @@
+{
+  "timestamp": "2026-09-02T15:31:30.761827",
+  "mode": "potato_v2",
+  "model": "spark-x2.5-4b:latest",
+  "quantization": "Q4_K_M",
+  "max_context": 2048,
+  "success_rate_pct": 100.0,
+  "total_tasks": 6,
+  "passed_tasks": 6,
+  "avg_latency_sec": 28.51,
+  "avg_tokens_per_sec": 4.24,
+  "avg_peak_context_tokens": 193.3,
+  "max_peak_context_tokens": 217,
+  "total_model_calls": 13,
+  "total_tool_calls": 7,
+  "vram_used_mb": 2182.7,
+  "vram_total_mb": 4096,
+  "tasks": [
+    {
+      "task_id": "task_1_example_com",
+      "name": "Open example.com and return title",
+      "success": true,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "total_latency_sec": 40.706,
+      "avg_tokens_per_sec": 2.23,
+      "initial_prompt_tokens": 321,
+      "peak_context_tokens": 157,
+      "ram_rss_mb": 13.0,
+      "vram_used_mb": 2171,
+      "final_output": "Thinking: The user wants me to open a URL and tell them the page title. I have already done this in the previous turn (or the"
+    },
+    {
+      "task_id": "task_2_list_tabs",
+      "name": "List browser tabs",
+      "success": true,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "total_latency_sec": 12.765,
+      "avg_tokens_per_sec": 5.89,
+      "initial_prompt_tokens": 313,
+      "peak_context_tokens": 167,
+      "ram_rss_mb": 14.4,
+      "vram_used_mb": 2185,
+      "final_output": "The user asked me to list all currently open browser tabs. I've already provided the response with the active tabs. I should keep it concise as per the rules. The response is already complete, so"
+    },
+    {
+      "task_id": "task_3_read_file",
+      "name": "Read local text file",
+      "success": true,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "total_latency_sec": 18.884,
+      "avg_tokens_per_sec": 6.12,
+      "initial_prompt_tokens": 346,
+      "peak_context_tokens": 217,
+      "ram_rss_mb": 8.8,
+      "vram_used_mb": 2185,
+      "final_output": "The user asked me to read a file and extract the POTATO_BENCHMARK_KEY value. I've read the file and found it"
+    },
+    {
+      "task_id": "task_4_git_status",
+      "name": "Run git status",
+      "success": true,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "total_latency_sec": 31.524,
+      "avg_tokens_per_sec": 2.59,
+      "initial_prompt_tokens": 316,
+      "peak_context_tokens": 208,
+      "ram_rss_mb": 5.6,
+      "vram_used_mb": 2185,
+      "final_output": "The user asked me to execute git status and report the current branch name. The output shows the branch is \"potatoclaw-main\". I should"
+    },
+    {
+      "task_id": "task_5_search_web",
+      "name": "Search web and extract 1 result",
+      "success": true,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "total_latency_sec": 36.206,
+      "avg_tokens_per_sec": 2.8,
+      "initial_prompt_tokens": 326,
+      "peak_context_tokens": 194,
+      "ram_rss_mb": 3.6,
+      "vram_used_mb": 2185,
+      "final_output": "The user asked me to search the browser for Python 3.12 release notes and extract the top title and URL. I've already done the search and found the results. Let me provide the"
+    },
+    {
+      "task_id": "task_6_multi_step_browser",
+      "name": "3-5 Step Browser Form Interaction",
+      "success": true,
+      "model_calls": 3,
+      "tool_calls": 2,
+      "total_latency_sec": 30.978,
+      "avg_tokens_per_sec": 5.81,
+      "initial_prompt_tokens": 330,
+      "peak_context_tokens": 217,
+      "ram_rss_mb": 7.3,
+      "vram_used_mb": 2185,
+      "final_output": "The user asked me to go to the URL, enter the customer name 'PotatoUser', and submit the form. I have already completed these steps"
+    }
+  ],
+  "stress_tests": [
+    {
+      "level": 1,
+      "name": "Simple Title Extraction",
+      "success": true,
+      "latency": 2.65,
+      "tokens": 79
+    },
+    {
+      "level": 2,
+      "name": "Web Search & Selection",
+      "success": true,
+      "latency": 1.66,
+      "tokens": 88
+    },
+    {
+      "level": 3,
+      "name": "GitHub Release Inspection",
+      "success": true,
+      "latency": 2.49,
+      "tokens": 106
+    },
+    {
+      "level": 4,
+      "name": "Test Diagnosis & Bug Explanation",
+      "success": true,
+      "latency": 2.7,
+      "tokens": 117
+    },
+    {
+      "level": 5,
+      "name": "Combined Browser + Filesystem Report",
+      "success": true,
+      "latency": 4.12,
+      "tokens": 113
+    }
+  ]
+}

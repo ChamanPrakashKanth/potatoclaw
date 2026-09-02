@@ -1,15 +1,16 @@
 /**
- * Dynamic Tool Router for Potato Mode.
+ * Dynamic Tool Router for Potato Mode V2.
  *
- * Exposes only the tools necessary for the current task intent, preventing
+ * Exposes only the tools necessary for the current task domain, preventing
  * tool-schema bloat in small local models (3B-4B) with limited context windows.
+ * Includes a lightweight escape mechanism allowing the model to request another tool family.
  */
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import { isPotatoModeEnabled, type PotatoModeConfig } from "./potato-mode.js";
 import { normalizeToolPolicyName } from "./tool-policy.js";
 
-export type PotatoTaskDomain = "browser" | "filesystem" | "shell" | "core";
+export type PotatoTaskDomain = "browser" | "filesystem" | "shell" | "memory" | "core";
 
 const BROWSER_KEYWORDS = [
   "browser",
@@ -28,6 +29,7 @@ const BROWSER_KEYWORDS = [
   "chrome",
   "dom",
   "tab",
+  "search",
 ];
 
 const FILESYSTEM_KEYWORDS = [
@@ -59,10 +61,13 @@ const SHELL_KEYWORDS = [
   "git",
   "pytest",
   "vitest",
+  "status",
 ];
 
+const MEMORY_KEYWORDS = ["remember", "previous", "note", "recall", "memory", "state"];
+
 /**
- * Classifies a user prompt into a task domain for tool routing.
+ * Classifies a user prompt or step into a task domain for tool routing.
  */
 export function classifyPotatoTaskDomain(prompt?: string): PotatoTaskDomain {
   if (!prompt || typeof prompt !== "string") {
@@ -88,6 +93,12 @@ export function classifyPotatoTaskDomain(prompt?: string): PotatoTaskDomain {
     }
   }
 
+  for (const keyword of MEMORY_KEYWORDS) {
+    if (lower.includes(keyword)) {
+      return "memory";
+    }
+  }
+
   return "core";
 }
 
@@ -97,18 +108,20 @@ export function classifyPotatoTaskDomain(prompt?: string): PotatoTaskDomain {
 export function getPotatoAllowedToolNames(domain: PotatoTaskDomain): Set<string> {
   switch (domain) {
     case "browser":
-      // Browser tasks only need browser + minimal inspection/completion
-      return new Set(["browser", "read", "write", "exec"]);
+      // Browser domain: browser tool + lightweight escape
+      return new Set(["browser", "request_tool_family"]);
     case "filesystem":
-      // Filesystem tasks need file tools + shell if needed
-      return new Set(["read", "write", "edit", "apply_patch", "exec"]);
+      // Filesystem domain: read, write, edit, patch + lightweight escape
+      return new Set(["read", "write", "edit", "apply_patch", "request_tool_family"]);
     case "shell":
-      // Shell tasks need exec + file read/write
-      return new Set(["exec", "read", "write"]);
+      // Shell domain: exec + lightweight escape
+      return new Set(["exec", "request_tool_family"]);
+    case "memory":
+      return new Set(["read", "write", "request_tool_family"]);
     case "core":
     default:
-      // Minimal default tool surface for Potato Mode
-      return new Set(["browser", "read", "write", "edit", "exec"]);
+      // Minimal default core tool surface
+      return new Set(["browser", "read", "exec", "request_tool_family"]);
   }
 }
 
@@ -121,16 +134,20 @@ export function routePotatoTools(params: {
   config?: OpenClawConfig;
   potatoConfig?: PotatoModeConfig;
   potatoMode?: boolean;
+  forcedDomain?: PotatoTaskDomain;
 }): AnyAgentTool[] {
   if (!isPotatoModeEnabled({ config: params.config, potatoMode: params.potatoMode })) {
     return params.tools;
   }
 
-  const domain = classifyPotatoTaskDomain(params.userPrompt);
+  const domain = params.forcedDomain ?? classifyPotatoTaskDomain(params.userPrompt);
   const allowedNames = getPotatoAllowedToolNames(domain);
 
-  return params.tools.filter((tool) => {
+  const filtered = params.tools.filter((tool) => {
     const norm = normalizeToolPolicyName(tool.name);
     return allowedNames.has(norm);
   });
+
+  // If filtering yielded empty, return the minimal safe core set
+  return filtered.length > 0 ? filtered : params.tools.slice(0, 3);
 }
