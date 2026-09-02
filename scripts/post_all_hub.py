@@ -25,6 +25,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+from fresh_start import purge_all_caches
 from x_news_engine import (
     fetch_category_news,
     generate_single_story_x_post,
@@ -253,6 +254,7 @@ def select_category():
     return map_cat.get(c, 'tech')
 
 if __name__ == "__main__":
+    purge_all_caches(verbose=True)
     if len(sys.argv) > 1:
         cmd = sys.argv[1].lower()
         cat = sys.argv[2].lower() if len(sys.argv) > 2 else "tech"

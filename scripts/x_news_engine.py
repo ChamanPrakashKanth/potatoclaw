@@ -19,6 +19,11 @@ import webbrowser
 import re
 from datetime import datetime
 
+try:
+    from fresh_start import purge_all_caches
+except ImportError:
+    def purge_all_caches(verbose=False): pass
+
 # Ensure UTF-8 output on Windows
 if sys.platform == "win32":
     try:
@@ -368,6 +373,7 @@ def run_menu():
         display_plan_and_post(cat, selected_article)
 
 if __name__ == "__main__":
+    purge_all_caches(verbose=False)
     if len(sys.argv) > 1 and sys.argv[1].lower() in ['tech', 'defence', 'physics', 'all']:
         cat = sys.argv[1].lower()
         print(f"[*] Searching #1 Top Story for {cat.upper()} (Non-Premium X Plan)...")

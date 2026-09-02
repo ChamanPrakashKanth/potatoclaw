@@ -54,6 +54,11 @@ if SCRIPT_DIR not in sys.path:
 
 from x_news_engine import fetch_category_news, clean_html_tags
 
+try:
+    from fresh_start import purge_all_caches
+except ImportError:
+    def purge_all_caches(verbose=False): pass
+
 PEXELS_SEARCH_URL = "https://api.pexels.com/videos/search"
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "media_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -391,6 +396,7 @@ def run_shorts_menu():
             pass
 
 if __name__ == "__main__":
+    purge_all_caches(verbose=False)
     if len(sys.argv) > 1 and sys.argv[1].lower() in ['tech', 'defence', 'physics']:
         cat = sys.argv[1].lower()
         arts = fetch_category_news(cat, 1)
