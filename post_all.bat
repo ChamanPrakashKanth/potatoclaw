@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title PotatoClaw - Master Automation Hub (X Posts + YouTube Shorts)
+title PotatoClaw - Master Automation Hub (X Posts)
 color 0A
 
 echo ======================================================================
-echo   POTATOCLAW V2 MASTER POSTING HUB (X POSTS + YOUTUBE SHORTS)
+echo   POTATOCLAW V2 MASTER POSTING HUB (X POSTS)
 echo ======================================================================
 echo.
 

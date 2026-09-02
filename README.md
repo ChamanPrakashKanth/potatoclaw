@@ -74,12 +74,6 @@ Tested on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (6 Cores)
 - **Curated Feeds**: MIT Tech Review, Hacker News, Breaking Defense, Defense One, USNI, Phys.org Quantum, Physics World.
 - **Features**: Twitter `t.co` 23-char link weighting, direct article link embedding for automatic rich preview cards, and 1-click browser posting with clipboard automation.
 
-### 🎬 AI YouTube Shorts & Video Post Generator
-- **Resolution**: 1080x1920 (9:16 Vertical HD Short).
-- **Video Engine**: Pexels Video API (`PEXELS_API_KEY` in `.env`) with synthetic motion background fallbacks.
-- **Overlay Engine**: Local FFmpeg rendering animated category badges, headlines, and source attributions.
-- **AI Captions**: PotatoClaw V2 generates SEO titles and hashtag descriptions with 1-click YouTube Studio / X upload launch.
-
 ---
 
 ## 🚀 Getting Started
@@ -87,15 +81,9 @@ Tested on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (6 Cores)
 ### 1. Prerequisites
 - Windows 10/11 (with WSL 2 for `llama-server`) or Linux / macOS.
 - NVIDIA GPU with $\ge$ 4GB VRAM (e.g. GTX 1650, GTX 1060, RTX 3050).
-- Python 3.8+ and FFmpeg installed on system PATH.
+- Python 3.8+ installed on system PATH.
 
-### 2. Environment Setup
-Create a `.env` file in the repository root:
-```ini
-PEXELS_API_KEY=your_pexels_api_key_here
-```
-
-### 3. Launch Local Model Server
+### 2. Launch Local Model Server
 ```powershell
 .\scripts\start-spark-potato.ps1
 ```
@@ -120,19 +108,10 @@ post_all.bat
 post_all.bat x tech
 post_all.bat x defence
 post_all.bat x physics
-
-:: Create 1080x1920 YouTube Short Video
-post_all.bat shorts tech
-post_all.bat shorts defence
-post_all.bat shorts physics
-
-:: Dual Post: Generate BOTH X Post + YouTube Shorts MP4
-post_all.bat all tech
 ```
 
 ### Dedicated Launchers
 - **[`post_tech_defence_physics_news.bat`](file:///c:/Users/user/Downloads/Potatoclaw/post_tech_defence_physics_news.bat)**: Direct single-story X poster.
-- **[`create_and_post_shorts.bat`](file:///c:/Users/user/Downloads/Potatoclaw/create_and_post_shorts.bat)**: Direct YouTube Shorts video generator.
 
 ---
 

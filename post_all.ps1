@@ -1,14 +1,13 @@
 <#
 .SYNOPSIS
-    PotatoClaw V2 Master Posting Hub (X Posts + YouTube Shorts)
+    PotatoClaw V2 Master Posting Hub (X Posts)
 .DESCRIPTION
-    Launches single-story news posting to X, 1080x1920 YouTube Shorts generation,
-    and dual posting workflows powered by PotatoClaw V2.
+    Launches single-story news posting to X powered by PotatoClaw V2 BMW Agent.
 .EXAMPLE
     .\post_all.ps1
     .\post_all.ps1 x tech
-    .\post_all.ps1 shorts physics
-    .\post_all.ps1 all defence
+    .\post_all.ps1 x physics
+    .\post_all.ps1 x defence
 #>
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
