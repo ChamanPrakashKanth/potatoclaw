@@ -24,8 +24,8 @@ if not exist "%PYTHON_EXE%" (
 :: 2. Launch the interactive News and X Posting Engine
 "%PYTHON_EXE%" "%~dp0scripts\x_news_engine.py" %*
 
-if %errorlevel% neq 0 (
-    echo.
-    echo [!] Process exited with status %errorlevel%
-    pause
-)
+echo.
+echo ======================================================================
+echo   Process completed. Press any key to close this window...
+echo ======================================================================
+pause >nul

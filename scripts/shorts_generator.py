@@ -274,76 +274,96 @@ def open_video_in_folder(path):
         pass
 
 def run_shorts_menu():
-    print("\n" + "=" * 65)
-    print("  POTATOCLAW SHORTS & VIDEO CREATOR (PEXELS + FFMPEG)")
-    print("=" * 65)
-    
-    if PEXELS_API_KEY:
-        print(f"[✔] Pexels API Key Detected (Key: {PEXELS_API_KEY[:6]}...{PEXELS_API_KEY[-4:]})")
-    else:
-        print("[i] Note: Add PEXELS_API_KEY=your_key in .env for real 4K/HD stock footage.")
+    while True:
+        print("\n" + "=" * 65)
+        print("  POTATOCLAW SHORTS & VIDEO CREATOR (PEXELS + FFMPEG)")
+        print("=" * 65)
         
-    print("-" * 65)
-    print(" [1] 🤖 Create Tech / AI Short Video")
-    print(" [2] 🛡️ Create Defence / Military Short Video")
-    print(" [3] ⚛️ Create Physics / Quantum Short Video")
-    print(" [Q] Quit")
-    print("-" * 65)
-    
-    choice = input("Select category [1-3, Q]: ").strip().lower()
-    if choice == 'q':
-        return
+        if PEXELS_API_KEY:
+            print(f"[✔] Pexels API Key Detected (Key: {PEXELS_API_KEY[:6]}...{PEXELS_API_KEY[-4:]})")
+        else:
+            print("[i] Note: Add PEXELS_API_KEY=your_key in .env for real 4K/HD stock footage.")
+            
+        print("-" * 65)
+        print(" [1] 🤖 Create Tech / AI Short Video")
+        print(" [2] 🛡️ Create Defence / Military Short Video")
+        print(" [3] ⚛️ Create Physics / Quantum Short Video")
+        print(" [Q] Quit")
+        print("-" * 65)
         
-    category_map = {'1': 'tech', '2': 'defence', '3': 'physics'}
-    if choice not in category_map:
-        print("[!] Invalid choice.")
-        return
+        try:
+            choice = input("Select category [1-3, Q]: ").strip().lower()
+        except EOFError:
+            break
+            
+        if choice == 'q':
+            print("Exiting Shorts Creator.")
+            break
+            
+        category_map = {'1': 'tech', '2': 'defence', '3': 'physics'}
+        if choice not in category_map:
+            print("[!] Invalid choice. Please choose 1, 2, 3, or Q.")
+            continue
+            
+        cat = category_map[choice]
+        print(f"\n[*] Curating #1 breaking story in '{cat.upper()}'...")
+        articles = fetch_category_news(cat, max_items=1)
         
-    cat = category_map[choice]
-    print(f"\n[*] Curating #1 breaking story in '{cat.upper()}'...")
-    articles = fetch_category_news(cat, max_items=1)
-    
-    if not articles:
-        print("[!] No stories found.")
-        return
+        if not articles:
+            print("[!] No stories found.")
+            continue
+            
+        article = articles[0]
+        print(f"[+] Selected Story: {article['title']} ({article['source']})")
         
-    article = articles[0]
-    print(f"[+] Selected Story: {article['title']} ({article['source']})")
-    
-    video_path = create_shorts_video(cat, article, PEXELS_API_KEY)
-    if not video_path:
-        print("[!] Failed to create video.")
-        return
+        video_path = create_shorts_video(cat, article, PEXELS_API_KEY)
+        if not video_path:
+            print("[!] Failed to create video.")
+            continue
+            
+        caption = generate_shorts_captions(cat, article, video_path)
         
-    caption = generate_shorts_captions(cat, article, video_path)
-    
-    print("\n" + "=" * 65)
-    print(" 🎬 SHORTS VIDEO READY:")
-    print("=" * 65)
-    print(f" File Location : {video_path}")
-    print(f" Video Format  : 1080x1920 (9:16 Vertical HD Short)")
-    print("-" * 65)
-    print(" 📝 POST CAPTION / DESCRIPTION:")
-    print(caption)
-    print("-" * 65)
-    print(" Actions:")
-    print("   [P] Open Video in File Explorer (Ready to drag-and-drop to X/YouTube/TikTok)")
-    print("   [C] Copy Caption to Clipboard")
-    print("   [X] Open X (Twitter) Video Upload Composer in Chrome")
-    print("   [Y] Open YouTube Shorts Upload in Chrome")
-    
-    action = input("\nChoose action [P/C/X/Y, default=P]: ").strip().lower()
-    copy_to_clipboard(caption)
-    
-    if action == 'x':
-        webbrowser.open("https://x.com/compose/post")
-        open_video_in_folder(video_path)
-    elif action == 'y':
-        webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
-        open_video_in_folder(video_path)
-    else:
-        open_video_in_folder(video_path)
-        print("[✔] Caption copied to clipboard and folder opened!")
+        print("\n" + "=" * 65)
+        print(" 🎬 SHORTS VIDEO READY:")
+        print("=" * 65)
+        print(f" File Location : {video_path}")
+        print(f" Video Format  : 1080x1920 (9:16 Vertical HD Short)")
+        print("-" * 65)
+        print(" 📝 POST CAPTION / DESCRIPTION:")
+        print(caption)
+        print("-" * 65)
+        print(" Actions:")
+        print("   [P] Open Video in File Explorer (Ready to drag-and-drop to X/YouTube/TikTok)")
+        print("   [C] Copy Caption to Clipboard")
+        print("   [X] Open X (Twitter) Video Upload Composer in Chrome")
+        print("   [Y] Open YouTube Shorts Upload in Chrome")
+        print("   [M] Back to Menu")
+        
+        try:
+            action = input("\nChoose action [P/C/X/Y/M, default=P]: ").strip().lower()
+        except EOFError:
+            action = 'p'
+            
+        copy_to_clipboard(caption)
+        
+        if action == 'x':
+            webbrowser.open("https://x.com/compose/post")
+            open_video_in_folder(video_path)
+            print("[✔] Opened X composer in browser and selected video in folder!")
+        elif action == 'y':
+            webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
+            open_video_in_folder(video_path)
+            print("[✔] Opened YouTube Studio upload in browser and selected video in folder!")
+        elif action == 'm':
+            continue
+        else:
+            open_video_in_folder(video_path)
+            print("[✔] Caption copied to clipboard and folder opened!")
+            
+        try:
+            input("\nPress Enter to continue...")
+        except EOFError:
+            pass
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1].lower() in ['tech', 'defence', 'physics']:
@@ -355,5 +375,15 @@ if __name__ == "__main__":
             copy_to_clipboard(cap)
             if vpath:
                 open_video_in_folder(vpath)
+            try:
+                input("\n[✔] Done! Press Enter to close...")
+            except EOFError:
+                pass
+        else:
+            print("[!] No stories found.")
+            try:
+                input("\nPress Enter to close...")
+            except EOFError:
+                pass
     else:
         run_shorts_menu()

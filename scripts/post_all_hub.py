@@ -159,33 +159,56 @@ def run_dual_post_workflow(category="tech"):
         webbrowser.open("https://studio.youtube.com/channel/videos/upload?d=ud")
 
 def show_interactive_hub():
-    print("=" * 65)
-    print("   POTATOCLAW MASTER POSTING & CONTENT AUTOMATION HUB")
-    print("=" * 65)
-    print(" Model: Spark-X2.5-4B (Q4_K_M) | GPU: GTX 1650 | Context: 2048")
-    print("-" * 65)
-    print(" [1] 🐦 Post Single-Story News to X (Tech / Defence / Physics)")
-    print(" [2] 🎬 Create & Post YouTube Shorts (9:16 Vertical Video)")
-    print(" [3] ⚡ Dual Post: Create BOTH (X Post + YouTube Short Video)")
-    print(" [4] 📊 Run PotatoClaw V2 Benchmark Suite")
-    print(" [5] 🧪 Run PotatoClaw V2 Architectural Tests")
-    print(" [Q] Quit")
-    print("-" * 65)
-    
-    choice = input("Select an option [1-5, Q]: ").strip().lower()
-    if choice == '1':
-        cat = select_category()
-        if cat: run_x_post_workflow(cat)
-    elif choice == '2':
-        cat = select_category()
-        if cat: run_shorts_workflow(cat)
-    elif choice == '3':
-        cat = select_category()
-        if cat: run_dual_post_workflow(cat)
-    elif choice == '4':
-        subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potato_v2"])
-    elif choice == '5':
-        subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
+    while True:
+        print("\n" + "=" * 65)
+        print("   POTATOCLAW MASTER POSTING & CONTENT AUTOMATION HUB")
+        print("=" * 65)
+        print(" Model: Spark-X2.5-4B (Q4_K_M) | GPU: GTX 1650 | Context: 2048")
+        print("-" * 65)
+        print(" [1] 🐦 Post Single-Story News to X (Tech / Defence / Physics)")
+        print(" [2] 🎬 Create & Post YouTube Shorts (9:16 Vertical Video)")
+        print(" [3] ⚡ Dual Post: Create BOTH (X Post + YouTube Short Video)")
+        print(" [4] 📊 Run PotatoClaw V2 Benchmark Suite")
+        print(" [5] 🧪 Run PotatoClaw V2 Architectural Tests")
+        print(" [Q] Quit")
+        print("-" * 65)
+        
+        try:
+            choice = input("Select an option [1-5, Q]: ").strip().lower()
+        except EOFError:
+            break
+            
+        if choice == 'q':
+            print("Exiting PotatoClaw Hub. Goodbye!")
+            break
+        elif choice == '1':
+            cat = select_category()
+            if cat:
+                run_x_post_workflow(cat)
+                try: input("\nPress Enter to return to main menu...")
+                except EOFError: pass
+        elif choice == '2':
+            cat = select_category()
+            if cat:
+                run_shorts_workflow(cat)
+                try: input("\nPress Enter to return to main menu...")
+                except EOFError: pass
+        elif choice == '3':
+            cat = select_category()
+            if cat:
+                run_dual_post_workflow(cat)
+                try: input("\nPress Enter to return to main menu...")
+                except EOFError: pass
+        elif choice == '4':
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potato_v2"])
+            try: input("\nPress Enter to return to main menu...")
+            except EOFError: pass
+        elif choice == '5':
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
+            try: input("\nPress Enter to return to main menu...")
+            except EOFError: pass
+        else:
+            print("[!] Invalid choice. Please select 1, 2, 3, 4, 5, or Q.")
 
 def select_category():
     print("\nSelect Category:")

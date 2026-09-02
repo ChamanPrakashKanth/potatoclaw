@@ -273,7 +273,12 @@ def display_plan_and_post(category, article):
         if action == 'p':
             open_x_intent(post_draft)
             copy_to_clipboard(post_draft)
-            print("[✔] Opened X composer in browser and copied text to clipboard!")
+            print("\n[✔] Opened X composer in browser and copied text to clipboard!")
+            print("[✔] Tip: Press Ctrl+V in the X window to paste and post.")
+            try:
+                input("\nPress Enter to continue in menu...")
+            except EOFError:
+                pass
         elif action == 'c':
             if copy_to_clipboard(post_draft):
                 print("[✔] Copied to Windows clipboard successfully!")
@@ -352,7 +357,16 @@ if __name__ == "__main__":
             print(f"Length: {len(draft)} / {X_FREE_CHAR_LIMIT} chars (Non-Premium OK)\n")
             copy_to_clipboard(draft)
             open_x_intent(draft)
+            print("[✔] Opened X composer in browser and copied tweet to clipboard!")
+            try:
+                input("\n[✔] Done! Press Enter to close...")
+            except EOFError:
+                pass
         else:
             print("[!] No stories found.")
+            try:
+                input("\nPress Enter to close...")
+            except EOFError:
+                pass
     else:
         run_menu()

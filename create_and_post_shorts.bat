@@ -24,8 +24,8 @@ if not exist "%PYTHON_EXE%" (
 :: 2. Launch the Shorts Generator
 "%PYTHON_EXE%" "%~dp0scripts\shorts_generator.py" %*
 
-if %errorlevel% neq 0 (
-    echo.
-    echo [!] Process exited with status %errorlevel%
-    pause
-)
+echo.
+echo ======================================================================
+echo   Process completed. Press any key to close this window...
+echo ======================================================================
+pause >nul
