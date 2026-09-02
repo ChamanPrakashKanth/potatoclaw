@@ -1,6 +1,8 @@
 node_modules
 **/node_modules/
 .env
+media_output/
+news_drafts/
 docker-compose.override.yml
 docker-compose.extra.yml
 docker-compose.sandbox.yml
