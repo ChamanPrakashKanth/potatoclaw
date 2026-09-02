@@ -10,6 +10,8 @@ import sys
 import os
 import io
 import time
+import urllib.request
+import urllib.parse
 import subprocess
 import webbrowser
 
