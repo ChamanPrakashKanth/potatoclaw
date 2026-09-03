@@ -13,6 +13,12 @@ Welcome, Agent. This file is the primary instruction manual and architectural sp
 ### The Central Research Question
 > *"How much apparent agent capability can be recovered through architecture, memory, graph planning, deterministic execution, verification, and selective neural computation when the underlying language model is small?"*
 
+### Primary Target Deployment Domains
+1. **Low-Resource Personal PCs & Laptops**: Everyday developer workflows on 4GB VRAM GPUs (GTX 1650) and 6GB RAM.
+2. **Robotics Edge & Physical Computing**: Onboard companion computers (NVIDIA Jetson, Raspberry Pi 5 + NPU, x86 mini-PCs) running AMRs, drones, and ROS2 nodes with deterministic action safety.
+3. **Industrial Edge & SCADA/PLC Environments**: Air-gapped factory workstations, DIN-rail IPCs, and field diagnostics with zero internet connectivity.
+4. **Defense & Air-Gapped High-Security SCIFs**: Zero-cloud autonomous operations with mathematical proof that no data leaves the device.
+
 ---
 
 ## 2. Sacred Invariants & Hardware Constraints

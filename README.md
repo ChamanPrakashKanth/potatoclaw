@@ -43,6 +43,8 @@
   - [5. System Administration, DevOps & Infrastructure Reliability](#5-system-administration-devops--infrastructure-reliability)
   - [6. Lightweight Web Scraping, Navigation & Regression Testing](#6-lightweight-web-scraping-navigation--regression-testing)
   - [7. Daily Desktop Productivity & Personal AI Companion](#7-daily-desktop-productivity--personal-ai-companion)
+  - [8. Robotics Edge-Based Computing & Physical Embodied Agents](#8-robotics-edge-based-computing--physical-embodied-agents)
+  - [9. Industrial Edge Computing, Smart Manufacturing & Critical Infrastructure](#9-industrial-edge-computing-smart-manufacturing--critical-infrastructure)
 - [⚡ Empirical Evaluation: PotatoBench 10-Task Research Suite](#-empirical-evaluation-potatobench-10-task-research-suite)
 - [🏗️ PotatoClaw V3 Modular Architecture](#️-potatoclaw-v3-modular-architecture)
 - [🥊 PotatoClaw vs Traditional Cloud Agent Frameworks](#-potatoclaw-vs-traditional-cloud-agent-frameworks)
@@ -97,6 +99,13 @@ When running 3B–7B parameter models on budget consumer hardware under tight 20
    - *Higher specs (RTX 2060/3060/4060)*: Expand context to 4096 tokens and run 7B/8B Q4 models with even greater reasoning depth!
 5. **Contribute Your Fixes**: Found a bug or engineered a smarter compiler/verifier heuristic? Submit a pull request! Let's empower potato PC owners worldwide to run real AI computer agents without paying cloud tolls.
 
+### 🤖 Calling Robotics & Industrial Edge Engineers: Build Upon This!
+Physical machines, robots, and industrial systems cannot afford cloud network latency, dropped packets, or 45-second LLM reasoning stalls. PotatoClaw's architecture provides the exact primitives needed for physical embodied computing:
+- **Deterministic Action Gating**: No motor, actuator, or valve fires without formal verification from [`DeterministicVerifier`](scripts/potato_verifier.py).
+- **Sensor Telemetry Compilers**: Converts multi-megabyte sensor telemetry (IMU streams, LIDAR ranges, PLC register logs) into compact structured states before neural evaluation.
+- **Fail-Safe Circuit Breakers**: Halts repetitive obstacle collisions or oscillating trajectory cycles before mechanical hardware damage occurs.
+- **100% On-Device Autonomy**: Runs completely offline on low-power companion computers (NVIDIA Jetson, Raspberry Pi 5 + NPU, x86 industrial DIN-rail boxes) without needing satellite or cellular internet.
+
 ---
 
 ## 🎯 Comprehensive Real-World Use Cases
@@ -140,6 +149,20 @@ PotatoClaw is not a toy proof-of-concept; it is a battle-tested daily driver for
 - **Sub-Second Rule Zero Direct Chat**: Type commands like `fetch_news defence`, `cat README.md`, or `run git status` into `potato_chat.bat` and receive instant **0.05-second deterministic execution** without burning model tokens.
 - **Natural Language Command Translation**: Convert casual instructions ("check if port 11435 is open", "find all files modified today") into verified PowerShell/Bash commands.
 - **Local Scratchpad & Task Memory**: Maintain long-term project memory across reboots using persistent BWM disk checkpoints without needing a dedicated vector database server.
+
+### 8. Robotics Edge-Based Computing & Physical Embodied Agents
+- **Autonomous Mobile Robots (AMRs) & AGVs**: Host a local task coordinator on an onboard NVIDIA Jetson Orin Nano, Raspberry Pi 5, or Intel NUC. The small model coordinates high-level route planning, obstacle avoidance re-routing, and status reporting without cloud latency.
+- **ROS 2 / ROS 1 Bridge Integration**: Sequence ROS 2 action servers and topics deterministically. The agent receives telemetry summaries from `/odom` or `/scan`, verifies prerequisite safety constraints, and triggers motion commands.
+- **Unmanned Aerial Vehicles (UAVs / Drones)**: Run an onboard mission supervisor communicating over MAVLink/serial. Ingest mission goals, monitor battery voltage and GPS coordinate drift, and adjust flight patterns locally during communication blackouts.
+- **Robotic Arm & Manipulation Task Verification**: Verify gripper contact states, joint limit compliance, and object presence with deterministic sensor assertions before progressing to the next manipulation phase.
+- **Hardware-Level Loop Circuit Breaking**: Cryptographic action hashing prevents infinite mechanical retry thrashing (e.g. attempting to grasp an ungraspable object repeatedly or oscillating between two unreachable waypoints).
+
+### 9. Industrial Edge Computing, Smart Manufacturing & Critical Infrastructure
+- **Air-Gapped SCADA & PLC Telemetry Diagnostics**: Run on fanless industrial PCs (Siemens, Advantech, Beckhoff) connected to factory Modbus, OPC-UA, and MQTT networks. Diagnose PLC fault alarms and register anomalies without exposing proprietary manufacturing processes to cloud servers.
+- **Edge Predictive Maintenance on Vibration & Thermal Logs**: Parse high-frequency vibration data and thermal sensor logs, using `ObservationCompiler` to extract temperature anomalies, bearing wear indicators, and motor RPM deviations into structured anomaly alerts.
+- **Field Technician SOP & Safety Copilot**: Deploy on ruggedized industrial tablets (Getac, Panasonic Toughbook) in offshore oil platforms, mining operations, substations, and cleanrooms. Guides field engineers through standard operating procedures (SOPs) with zero external connectivity.
+- **Automated Manufacturing Quality Control (QC) Stations**: Ingest optical inspection logs, barcode scan records, and dimensional tolerance checks at assembly stations, deterministically validating batch pass/fail criteria and logging traceability records.
+- **Off-Grid Energy & Utility Monitoring**: Oversee microgrids, solar inverter arrays, and wind turbine sub-assemblies in remote geographic installations with strict low-power consumption and zero cellular reliance.
 
 ---
 
