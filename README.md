@@ -184,6 +184,7 @@ Detailed reports are generated in:
 
 ## 🙏 Credits & Attribution
 
+### 🦞 OpenClaw
 PotatoClaw is built upon and inspired by the incredible open-source architecture of **[OpenClaw](https://github.com/openclaw/openclaw)**. 
 
 We extend our sincere gratitude to the OpenClaw maintainers and community for:
@@ -192,6 +193,9 @@ We extend our sincere gratitude to the OpenClaw maintainers and community for:
 - Pioneering open-source autonomous agent architectures that make small-model local experimentation possible.
 
 For upstream OpenClaw documentation and source, visit [https://docs.openclaw.ai](https://docs.openclaw.ai) and [https://github.com/openclaw/openclaw](https://github.com/openclaw/openclaw).
+
+### ⚡ Gemini
+Architectural evolution, empirical PotatoBench benchmark design, bounded working memory algorithms, deterministic verifiers, and systems co-engineering designed and implemented with **Google DeepMind's Gemini**.
 
 ---
 
