@@ -34,6 +34,7 @@
 
 - [💡 The PotatoClaw Research Mission](#-the-potatobench-research-mission)
 - [⚙️ Core Principle: "Rule Zero"](#️-core-principle-rule-zero)
+- [⚠️ Imperfect, Work-in-Progress & An Open Invitation to Build](#️-imperfect-work-in-progress--an-open-invitation-to-build)
 - [🎯 Comprehensive Real-World Use Cases](#-comprehensive-real-world-use-cases)
   - [1. Autonomous Software Engineering & Local Developer Workflows](#1-autonomous-software-engineering--local-developer-workflows)
   - [2. Privacy-Preserving OSINT, Technical Research & News Intelligence](#2-privacy-preserving-osint-technical-research--news-intelligence)
@@ -74,6 +75,27 @@ PotatoClaw proves that a **compact 4B model running on a budget GTX 1650 GPU wit
 3. **Deterministic Verification**: Output correctness is verified via OS exit codes, AST parsing, regex, and file signatures, not LLM self-grading.
 4. **Deterministic Observation**: Raw terminal outputs, browser HTML, and file listings are compressed into milestone summaries by Observation Compilers before reaching the model.
 5. **Deterministic Circuit Breaking**: Action repeat loops and oscillatory cycles are halted by cryptographic failure signature hashing.
+
+---
+
+## ⚠️ Imperfect, Work-in-Progress & An Open Invitation to Build
+
+> **Honest Engineering Note**: PotatoClaw is an experimental, evolving open-source research project, not a polished commercial black-box product. It is intentionally raw, scrappy, and imperfect.
+
+When running 3B–7B parameter models on budget consumer hardware under tight 2048-token context constraints:
+- Small models will occasionally stumble, generate awkward phrasing, or produce reasoning quirks.
+- Edge-case user prompts might occasionally bypass fast-path intent matching or require an extra conversational turn.
+- Small models have varying reasoning styles (e.g., `<think>` tokens, JSON formatting fidelity).
+
+### 🛠️ You Can Build Upon This — Make It Better For Your Potato PC!
+**This codebase is a modular foundation designed for you to hack, adapt, customize, and improve for your own unique hardware:**
+1. **Swap & Test Other Small Models**: Plug in `Phi-3.5-mini`, `Qwen-2.5-Coder-3B`, `Llama-3.2-3B`, `Gemma-2-2B`, or `DeepSeek-R1-Distill-Qwen-1.5B`.
+2. **Tune BWM Memory Scoring**: Adjust the mathematical weights in [`scripts/potato_bwm.py`](scripts/potato_bwm.py) ($\text{Score} = w_1 \cdot \text{imp} + w_2 \cdot \text{rel} + w_3 \cdot \text{nov} + w_4 \cdot \text{rec} - w_5 \cdot \text{cost}$) to prioritize code snippets, tool outcomes, or conversation continuity for your specific workflows.
+3. **Add Custom Domain Tools**: Extend [`scripts/potato_chat.py`](scripts/potato_chat.py) with custom local tools — such as SQLite query executors, local audio transcription (Whisper.cpp), PDF text extractors, or local Docker managers.
+4. **Adapt to Lower (or Higher) Specs**: 
+   - *Lower specs (Integrated GPU / 8GB RAM)*: Adjust GPU offload layers (`-ngl`) in [`scripts/start-spark-potato.ps1`](scripts/start-spark-potato.ps1) or run pure CPU inference with `llama.cpp`.
+   - *Higher specs (RTX 2060/3060/4060)*: Expand context to 4096 tokens and run 7B/8B Q4 models with even greater reasoning depth!
+5. **Contribute Your Fixes**: Found a bug or engineered a smarter compiler/verifier heuristic? Submit a pull request! Let's empower potato PC owners worldwide to run real AI computer agents without paying cloud tolls.
 
 ---
 
