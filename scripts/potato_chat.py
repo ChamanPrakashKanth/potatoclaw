@@ -380,7 +380,7 @@ def run_interactive_chat():
         elif cmd in ["/reset", "/clear", "/c"]:
             bwm.clear()
             history.clear()
-            loop_detector.recent_actions.clear()
+            loop_detector.reset()
             purge_all_caches(verbose=False)
             reset_llama_server_kv_cache()
             print(f"{YELLOW}[✔] PotatoClaw V3 BWM, loop memory, and KV slots cleared. Fresh start!{RESET}\n")
@@ -465,7 +465,7 @@ def run_interactive_chat():
             tool_name, tool_args = extract_tool_call(agent_text)
             if tool_name:
                 # Check Loop Detector
-                is_loop, loop_msg = loop_detector.record_and_check(tool_name, tool_args)
+                is_loop, loop_msg = loop_detector.record_action(tool_name, tool_args)
                 if is_loop:
                     print(f"\n{RED}🛑 LOOP DETECTED: {loop_msg}{RESET}")
                     bwm.add_protected_fact(f"LOOP DETECTED on {tool_name}. Halting repeat.")

@@ -143,6 +143,14 @@ class LoopDetector:
 
         return False, ""
 
+    def record_and_check(self, tool_name: str, args: Dict[str, Any], node_id: str = "") -> Tuple[bool, str]:
+        """Alias for record_action."""
+        return self.record_action(tool_name, args, node_id)
+
+    @property
+    def recent_actions(self) -> List[Dict[str, Any]]:
+        return self.history
+
     def reset(self) -> None:
         self.history.clear()
 
