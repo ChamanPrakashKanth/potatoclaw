@@ -76,21 +76,36 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-# --- Rule Zero: Direct Action & Intent Interception ---
 def intercept_direct_action(user_input):
     """
     Rule Zero: DO NOT USE AN LLM FOR ALGORITHMIC OR DIRECT COMMANDS.
-    Intercepts explicit commands (news, read, run, browser) for instant 0.05s execution.
+    Intercepts explicit commands and natural news queries for instant 0.05s execution.
     """
     clean = user_input.strip().lower()
 
-    # 1. News queries
-    if clean in ["fetch_news", "news", "get_news", "latest news", "breaking news"]:
+    # 1. Natural News Queries
+    is_news = any(k in clean for k in ["news", "headline", "headlines", "story", "stories", "feed", "article", "update", "updates", "intel"])
+    is_defence = any(k in clean for k in ["defence", "defense", "military", "drdo", "army", "navy", "airforce", "iaf", "missile", "radar", "weapon", "war"])
+    is_india = any(k in clean for k in ["india", "indian", "idrw", "delhi", "bharat"])
+    is_tech = any(k in clean for k in ["tech", "technology", "ai", "artificial intelligence", "software", "gpu", "chip", "semiconductor"])
+    is_physics = any(k in clean for k in ["physics", "quantum", "cern", "space", "astronomy", "cosmos", "particle"])
+
+    # High-priority compound match: Indian Defence
+    if (is_india and is_defence) or "indian defence" in clean or "indian defense" in clean:
+        return "fetch_news", {"category": "indian_defence"}
+
+    if is_defence and (is_news or clean.startswith("fetch") or clean.startswith("get") or clean.startswith("show") or clean.startswith("give") or clean.startswith("i want")):
+        return "fetch_news", {"category": "indian_defence" if is_india else "defence"}
+
+    if is_tech and (is_news or clean.startswith("fetch") or clean.startswith("get") or clean.startswith("show") or clean.startswith("give") or clean.startswith("i want")):
         return "fetch_news", {"category": "tech"}
-    if clean.startswith("fetch_news ") or clean.startswith("news ") or clean.startswith("/news "):
-        cat = clean.split()[-1].strip()
-        cat = cat if cat in ["tech", "defence", "physics"] else "tech"
-        return "fetch_news", {"category": cat}
+
+    if is_physics and (is_news or clean.startswith("fetch") or clean.startswith("get") or clean.startswith("show") or clean.startswith("give") or clean.startswith("i want")):
+        return "fetch_news", {"category": "physics"}
+
+    if is_news or clean in ["news", "latest news", "breaking news", "fetch_news"]:
+        return "fetch_news", {"category": "tech"}
+
     if clean in ["tech", "defence", "defense", "physics", "science"]:
         cat = "defence" if clean in ["defence", "defense"] else "physics" if clean == "science" else clean
         return "fetch_news", {"category": cat}
@@ -334,15 +349,21 @@ def call_potato_agent(messages, max_tokens=250, temperature=0.1):
                 if t_name:
                     content = json.dumps({"tool": t_name, "args": t_args})
                 else:
-                    # Clean out meta-reasoning and extract the final conclusion sentence
-                    sentences = [s.strip() for s in re.split(r'[.!?]\s+', reasoning) if s.strip()]
+                    # Comprehensive blacklist for internal meta-reasoning
+                    meta_patterns = [
+                        "the user", "user asked", "user says", "previous assistant", "output json",
+                        "tool_call", "let's use", "let me", "i should", "i need", "i will use",
+                        "prompt says", "we are asked", "looking at", "is a bit odd", "it seems",
+                        "context provided", "wait,", "ah,", "supposed to", "as potatoai"
+                    ]
+                    sentences = [s.strip() for s in re.split(r'[.!?\n]\s*', reasoning) if s.strip()]
                     conclusion = ""
                     for s in reversed(sentences):
                         low = s.lower()
-                        if not any(w in low for w in ["the user", "i should", "i need to", "prompt says", "let me check", "we are asked", "looking at the"]):
+                        if not any(w in low for w in meta_patterns) and len(s) > 10:
                             conclusion = s
                             break
-                    content = conclusion if conclusion else "Understood. How would you like me to proceed?"
+                    content = conclusion if conclusion else "I am ready. What would you like to know or execute?"
             else:
                 content = "Understood. How can I assist you further?"
             
@@ -517,7 +538,7 @@ def run_interactive_chat():
             
             bwm.add_fact(f"Completed {direct_tool}: {tool_result[:60]}")
             history.append({"role": "user", "content": user_input})
-            history.append({"role": "assistant", "content": f"Executed {direct_tool}."})
+            history.append({"role": "assistant", "content": f"Here is what was found:\n{tool_result[:250]}"})
             lat_ms = round((time.time() - t0_fast) * 1000)
             print(f"\n{DIM}[{lat_ms}ms | 0 tokens (Rule Zero)]{RESET}\n")
             continue

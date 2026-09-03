@@ -54,10 +54,15 @@ FEEDS = {
         ("ArXiv AI", "https://export.arxiv.org/rss/cs.AI"),
     ],
     "defence": [
+        ("IDRW (Indian Defence)", "https://idrw.org/feed/"),
         ("Breaking Defense", "https://breakingdefense.com/feed/"),
         ("Defense One", "https://www.defenseone.com/rss/all/"),
         ("US Naval Institute", "https://news.usni.org/feed"),
         ("SpaceNews Defense", "https://spacenews.com/feed/"),
+    ],
+    "indian_defence": [
+        ("IDRW (Indian Defence)", "https://idrw.org/feed/"),
+        ("Livefist Defence", "https://www.livefistdefence.com/feed/"),
     ],
     "physics": [
         ("Phys.org Quantum", "https://phys.org/rss-feed/physics-news/quantum-physics/"),
