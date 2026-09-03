@@ -35,7 +35,7 @@
 - [💡 The PotatoClaw Research Mission](#-the-potatobench-research-mission)
 - [⚙️ Core Principle: "Rule Zero"](#️-core-principle-rule-zero)
 - [⚠️ Imperfect, Work-in-Progress & An Open Invitation to Build](#️-imperfect-work-in-progress--an-open-invitation-to-build)
-- [🎯 Comprehensive Real-World Use Cases](#-comprehensive-real-world-use-cases)
+- [🎯 Comprehensive Real-World & Research Use Cases](#-comprehensive-real-world--research-use-cases)
   - [1. Autonomous Software Engineering & Local Developer Workflows](#1-autonomous-software-engineering--local-developer-workflows)
   - [2. Privacy-Preserving OSINT, Technical Research & News Intelligence](#2-privacy-preserving-osint-technical-research--news-intelligence)
   - [3. Social Media, Content Creation & Automated Publishing](#3-social-media-content-creation--automated-publishing)
@@ -43,11 +43,11 @@
   - [5. System Administration, DevOps & Infrastructure Reliability](#5-system-administration-devops--infrastructure-reliability)
   - [6. Lightweight Web Scraping, Navigation & Regression Testing](#6-lightweight-web-scraping-navigation--regression-testing)
   - [7. Daily Desktop Productivity & Personal AI Companion](#7-daily-desktop-productivity--personal-ai-companion)
-  - [8. Robotics Edge-Based Computing & Physical Embodied Agents](#8-robotics-edge-based-computing--physical-embodied-agents)
-  - [9. Industrial Edge Computing, Smart Manufacturing & Critical Infrastructure](#9-industrial-edge-computing-smart-manufacturing--critical-infrastructure)
+  - [8. Potential Research Applications: Robotics & Physical Embodied Agents](#8-potential-research-applications-robotics--physical-embodied-agents-exploratory--non-safety-critical)
+  - [9. Potential Research Applications: Industrial Edge & Diagnostics](#9-potential-research-applications-industrial-edge--diagnostics-exploratory--non-safety-critical)
 - [⚡ Empirical Evaluation: PotatoBench 10-Task Research Suite](#-empirical-evaluation-potatobench-10-task-research-suite)
 - [🏗️ PotatoClaw V3 Modular Architecture](#️-potatoclaw-v3-modular-architecture)
-- [🥊 PotatoClaw vs Traditional Cloud Agent Frameworks](#-potatoclaw-vs-traditional-cloud-agent-frameworks)
+- [🥊 Architectural Comparison: Cloud-First Frameworks vs PotatoClaw](#-architectural-comparison-cloud-first-frameworks-vs-potatoclaw)
 - [💻 Hardware & Model Specifications](#-hardware--model-specifications)
 - [🚀 Quick Start & 1-Click Launchers](#-quick-start--1-click-launchers)
 - [🧪 Testing & Benchmarking](#-testing--benchmarking)
@@ -58,13 +58,31 @@
 
 ## 💡 The PotatoClaw Research Mission
 
-Modern autonomous computer-use agents (e.g., AutoGPT, CrewAI, frontier browser agents) assume unlimited resources: 70B–405B parameter frontier models, 32k–128k context windows, giant vector databases, and expensive cloud API subscriptions. On consumer hardware, these architectures fail instantly due to Out-Of-Memory (OOM) errors, context saturation, token thrashing, and hallucinated action loops.
+Modern autonomous computer-use agents (e.g., AutoGPT, CrewAI, frontier browser agents) typically assume abundant resources: large cloud models (70B+), huge context windows (32k–128k), and external SaaS infrastructure. On consumer hardware, running agents this way quickly leads to Out-Of-Memory (OOM) errors, context saturation, high latency, and repetitive action loops.
 
-**PotatoClaw** answers the central research question:
+**PotatoClaw** investigates the central research question:
 
 > *"How much apparent agent capability can be recovered through architecture, memory, graph planning, deterministic execution, verification, and selective neural computation when the underlying language model is small?"*
 
-PotatoClaw proves that a **compact 4B model running on a budget GTX 1650 GPU with only 2048 tokens of context** can match or exceed the task completion reliability of cloud agents when supported by a deterministic systems architecture.
+Rather than relying on the LLM to handle scheduling, verification, and memory pruning internally, PotatoClaw operates on a foundational shift:
+
+$$
+\boxed{\text{The LLM is no longer the entire agent — it is one component of a deterministic system.}}
+$$
+
+$$
+\boxed{
+\text{PotatoClaw}
+=
+\text{small local LLM}
++
+\text{structured external cognition}
++
+\text{deterministic computation}
+}
+$$
+
+PotatoClaw **investigates whether a compact ~4B model running on a budget GTX 1650 GPU with only 2048 tokens of context can recover substantial agent capability** when supported by deterministic graph planning, bounded memory tiers, observation compilers, and code verifiers.
 
 ---
 
@@ -100,17 +118,19 @@ When running 3B–7B parameter models on budget consumer hardware under tight 20
 5. **Contribute Your Fixes**: Found a bug or engineered a smarter compiler/verifier heuristic? Submit a pull request! Let's empower potato PC owners worldwide to run real AI computer agents without paying cloud tolls.
 
 ### 🤖 Calling Robotics & Industrial Edge Engineers: Build Upon This!
-Physical machines, robots, and industrial systems cannot afford cloud network latency, dropped packets, or 45-second LLM reasoning stalls. PotatoClaw's architecture provides the exact primitives needed for physical embodied computing:
-- **Deterministic Action Gating**: No motor, actuator, or valve fires without formal verification from [`DeterministicVerifier`](scripts/potato_verifier.py).
-- **Sensor Telemetry Compilers**: Converts multi-megabyte sensor telemetry (IMU streams, LIDAR ranges, PLC register logs) into compact structured states before neural evaluation.
-- **Fail-Safe Circuit Breakers**: Halts repetitive obstacle collisions or oscillating trajectory cycles before mechanical hardware damage occurs.
+Physical machines and industrial edge devices operate under real constraints: intermittent networks, strict power envelopes, and tight compute budgets. PotatoClaw's architecture provides useful software primitives for exploring physical computing:
+- **Deterministic Software Gating**: Validates command syntax, exit codes, and preconditions before dispatching scripted commands to driver interfaces.
+- **Sensor Telemetry Compilers**: Distills multi-line sensor streams (IMU data, LIDAR ranges, register logs) into compact structured states before neural evaluation.
+- **Fail-Safe Circuit Breakers**: Halts repetitive failed actions or oscillating trajectory loops via cryptographic action hashing.
 - **100% On-Device Autonomy**: Runs completely offline on low-power companion computers (NVIDIA Jetson, Raspberry Pi 5 + NPU, x86 industrial DIN-rail boxes) without needing satellite or cellular internet.
+
+> ⚠️ **Safety Disclaimer**: PotatoClaw is an experimental open-source software project. Its deterministic verifiers validate software outputs (OS exit codes, regex patterns, AST syntax, file states) and are **NOT validated for safety-critical physical control, flight control, or industrial life-safety systems**.
 
 ---
 
-## 🎯 Comprehensive Real-World Use Cases
+## 🎯 Comprehensive Real-World & Research Use Cases
 
-PotatoClaw is not a toy proof-of-concept; it is a battle-tested daily driver for developers, researchers, and system operators who need real automation without cloud dependency.
+PotatoClaw is an experimental open-source research testbed and modular automation suite designed for local developers, researchers, and system operators who want to explore offline autonomy without cloud dependencies.
 
 ### 1. Autonomous Software Engineering & Local Developer Workflows
 - **Autonomous Git Maintenance**: Inspect repository status, stage modified files, generate clean conventional commit messages, and push changes to remote branches without leaving the terminal.
@@ -150,19 +170,19 @@ PotatoClaw is not a toy proof-of-concept; it is a battle-tested daily driver for
 - **Natural Language Command Translation**: Convert casual instructions ("check if port 11435 is open", "find all files modified today") into verified PowerShell/Bash commands.
 - **Local Scratchpad & Task Memory**: Maintain long-term project memory across reboots using persistent BWM disk checkpoints without needing a dedicated vector database server.
 
-### 8. Robotics Edge-Based Computing & Physical Embodied Agents
-- **Autonomous Mobile Robots (AMRs) & AGVs**: Host a local task coordinator on an onboard NVIDIA Jetson Orin Nano, Raspberry Pi 5, or Intel NUC. The small model coordinates high-level route planning, obstacle avoidance re-routing, and status reporting without cloud latency.
-- **ROS 2 / ROS 1 Bridge Integration**: Sequence ROS 2 action servers and topics deterministically. The agent receives telemetry summaries from `/odom` or `/scan`, verifies prerequisite safety constraints, and triggers motion commands.
-- **Unmanned Aerial Vehicles (UAVs / Drones)**: Run an onboard mission supervisor communicating over MAVLink/serial. Ingest mission goals, monitor battery voltage and GPS coordinate drift, and adjust flight patterns locally during communication blackouts.
-- **Robotic Arm & Manipulation Task Verification**: Verify gripper contact states, joint limit compliance, and object presence with deterministic sensor assertions before progressing to the next manipulation phase.
-- **Hardware-Level Loop Circuit Breaking**: Cryptographic action hashing prevents infinite mechanical retry thrashing (e.g. attempting to grasp an ungraspable object repeatedly or oscillating between two unreachable waypoints).
+### 8. Potential Research Applications: Robotics & Physical Embodied Agents (Exploratory / Non-Safety-Critical)
+- **Autonomous Mobile Robots (AMRs) & AGVs**: Prototyping local high-level task coordination on an onboard companion computer (NVIDIA Jetson Orin Nano, Raspberry Pi 5, or Intel NUC) for waypoint sequencing and status updates without cloud latency.
+- **ROS 2 / ROS 1 Bridge Scripting**: Sequence non-critical ROS action scripts and topic checks deterministically. The agent receives telemetry summaries from `/odom` or `/scan`, checks software preconditions, and dispatches high-level navigation goals.
+- **Drone Telemetry Log Analysis**: Run an onboard log supervisor communicating over MAVLink/serial. Ingest mission logs, monitor battery telemetry anomalies, and summarize telemetry trends.
+- **Manipulation Task Script Verification**: Validate command success, script return codes, and simulated sensor assertions before progressing to the next manipulation phase.
+- **Action Repeat Prevention**: Cryptographic action hashing prevents infinite retry thrashing in experimental task loops.
 
-### 9. Industrial Edge Computing, Smart Manufacturing & Critical Infrastructure
-- **Air-Gapped SCADA & PLC Telemetry Diagnostics**: Run on fanless industrial PCs (Siemens, Advantech, Beckhoff) connected to factory Modbus, OPC-UA, and MQTT networks. Diagnose PLC fault alarms and register anomalies without exposing proprietary manufacturing processes to cloud servers.
-- **Edge Predictive Maintenance on Vibration & Thermal Logs**: Parse high-frequency vibration data and thermal sensor logs, using `ObservationCompiler` to extract temperature anomalies, bearing wear indicators, and motor RPM deviations into structured anomaly alerts.
-- **Field Technician SOP & Safety Copilot**: Deploy on ruggedized industrial tablets (Getac, Panasonic Toughbook) in offshore oil platforms, mining operations, substations, and cleanrooms. Guides field engineers through standard operating procedures (SOPs) with zero external connectivity.
-- **Automated Manufacturing Quality Control (QC) Stations**: Ingest optical inspection logs, barcode scan records, and dimensional tolerance checks at assembly stations, deterministically validating batch pass/fail criteria and logging traceability records.
-- **Off-Grid Energy & Utility Monitoring**: Oversee microgrids, solar inverter arrays, and wind turbine sub-assemblies in remote geographic installations with strict low-power consumption and zero cellular reliance.
+### 9. Potential Research Applications: Industrial Edge & Diagnostics (Exploratory / Non-Safety-Critical)
+- **Air-Gapped SCADA & PLC Telemetry Log Diagnostics**: Testbed deployment on fanless industrial PCs (Siemens, Advantech, Beckhoff) connected to factory Modbus, OPC-UA, and MQTT test networks to inspect alarm logs and register dumps offline.
+- **Edge Anomaly Detection on Vibration & Thermal Logs**: Parse high-frequency vibration and thermal sensor logs, using `ObservationCompiler` to extract temperature anomalies, bearing wear indicators, and motor RPM deviations into structured anomaly summaries.
+- **Field Technician SOP & Reference Copilot**: Offline documentation lookup on ruggedized industrial tablets (Getac, Panasonic Toughbook) in remote facilities, guiding technicians through standard operating procedures (SOPs).
+- **Automated Manufacturing Quality Control (QC) Log Auditing**: Ingest optical inspection logs, barcode scan records, and dimensional tolerance checks at assembly test stations, validating test criteria and logging traceability records.
+- **Off-Grid Energy & Utility Log Monitoring**: Local telemetry log analysis for microgrids, solar inverters, and wind turbine sub-assemblies in remote geographic installations with strict low-power consumption.
 
 ---
 
@@ -183,13 +203,15 @@ Evaluated live on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (
 | **9. Constraint Retention** | ✅ PASS | 6.72s | 131 | 1 | Protected memory preserves critical safety rules |
 | **10. Long-Horizon Torture** | ✅ PASS | 3.52s | 217 | 1 | 8-step execution (>4096 raw tokens compressed) |
 
-### Key Benchmark Metrics
-- **Success Rate**: **100.0% (10/10 tasks passed)**
-- **Average Task Latency**: **5.23s** (vs 56.74s uncompressed baseline, **>10x faster**)
-- **Average Tokens / Task**: **129.3 tokens** (fits easily inside 2048 budget)
+### Key Benchmark Metrics (PotatoBench Evaluation Suite)
+- **Suite Task Completion**: **10/10 tasks passed (100%)**
+- **Average Task Latency**: **5.23s** (vs 56.74s uncompressed baseline on identical hardware, **>10x faster**)
+- **Average Tokens Generated / Task**: **129.3 tokens** (conserving finite context)
 - **Model Invocations / Task**: **1.0 call** (strictly optimal)
 - **VRAM Footprint**: **~2,165 MiB steady** (leaving ~1.9 GB headroom for system display)
 - **Unit & Integration Tests**: **66/66 passed (100%)**
+
+> 📌 **Methodology Note**: These metrics reflect empirical performance on the **10 defined evaluation tasks of the PotatoBench research suite** on our reference GTX 1650 / 6GB RAM testbed. They measure architectural efficiency (token compression, execution speed, loop suppression, deterministic verification) and do not claim generalized reasoning parity with frontier cloud models on open-ended general intelligence benchmarks.
 
 *Detailed reports and raw datasets:*
 - [`BENCHMARK.md`](BENCHMARK.md) — Complete 10-task experimental report.
@@ -245,17 +267,18 @@ graph TD
 
 ---
 
-## 🥊 PotatoClaw vs Traditional Cloud Agent Frameworks
+## 🥊 Architectural Comparison: Cloud-First Frameworks vs PotatoClaw
 
-| Capability / Metric | Traditional Cloud Frameworks (LangChain / CrewAI / AutoGen) | PotatoClaw V3 Architecture |
+| Architectural Dimension | Traditional Cloud-First Agent Paradigms | PotatoClaw Systems Architecture |
 | :--- | :--- | :--- |
-| **Minimum Hardware** | 16GB–32GB RAM + Cloud API Key | **4GB GPU (GTX 1650) + 6GB RAM** |
-| **Working Context** | 32,000 – 128,000 tokens | **Hard bounded $\le 2048$ tokens** |
-| **Operating Cost** | $0.05 – $2.00 per task run | **$0.00 (100% Free & Local)** |
-| **Data Privacy** | Code & data sent to external cloud servers | **100% On-Device / Air-Gapped Safe** |
-| **Loop Prevention** | Heuristic retries (often exhausts token budget) | **Deterministic Action & Cycle Breakers** |
-| **Direct Command Latency** | 15s – 45s (full LLM round-trip) | **0.05s (Rule Zero Fast-Path)** |
-| **Output Verification** | LLM self-reflection (hallucination-prone) | **OS Exit Codes + AST + Regex Verifiers** |
+| **Primary Compute Engine** | Remote cloud API (70B–405B frontier models) | **Local quantized small model (~4B GGUF)** |
+| **Hardware Target** | High-end workstation / Cloud GPU cluster | **Consumer budget PC (GTX 1650 4GB VRAM)** |
+| **Working Context Strategy** | Unbounded / Large context (32k–128k tokens) | **Hard bounded working context ($\le 2048$ tokens)** |
+| **Task Planning Method** | Re-prompting / LLM self-reflection | **Deterministic DAG Topological Sort (`potato_graph.py`)** |
+| **Memory Management** | Full conversational history accumulation | **Utility-scored Bounded Working Memory (`potato_bwm.py`)** |
+| **Loop & Cycle Handling** | Heuristic retries / Token limit exhaustion | **Cryptographic action hashing & circuit breaker** |
+| **Output Verification** | Model self-grading (confirmation-bias prone) | **Deterministic AST, regex & exit code checks** |
+| **Privacy & Connectivity** | Telemetry and prompts transit external clouds | **100% On-Device / Air-Gapped / Zero Cloud** |
 
 ---
 
