@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-PotatoClaw Interactive AI Agent Chat (PotatoAI)
-Runs a fast, local, conversational computer agent powered by Spark-X2.5-4B
-with PotatoClaw V2 Bounded Working Memory (BMW), Tool Execution, and Memory Decay.
+PotatoClaw Interactive AI Agent Chat (PotatoAI V3)
+Powered by Spark-X2.5-4B + Full PotatoClaw V3 Architecture:
+- TaskGraph & DAG Scheduler (potato_graph.py)
+- Bounded Working Memory & Hierarchical Tiers (potato_bwm.py)
+- Observation Compiler & Context Compiler (potato_compiler.py)
+- Deterministic Verifier (potato_verifier.py)
+- Failure Memory, Loop Breaker & Tool Router (potato_failure_memory.py)
 """
 
 import sys
@@ -38,6 +42,13 @@ ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+from potato_graph import TaskGraph, TaskNode, NodeStatus, ToolFamily
+from potato_bwm import BoundedWorkingMemory, HierarchicalMemory
+from potato_compiler import ObservationCompiler, ContextCompiler
+from potato_verifier import DeterministicVerifier
+from potato_failure_memory import FailureMemoryStore, LoopDetector, DynamicToolRouter
+from potato_agent import PotatoAgent
+
 try:
     from fresh_start import purge_all_caches, reset_llama_server_kv_cache
 except ImportError:
@@ -63,60 +74,6 @@ BLUE = "\033[94m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
-
-# --- Bounded Working Memory (BMW) ---
-class BoundedWorkingMemory:
-    def __init__(self, max_chars=850):
-        self.goal = ""
-        self.state = "IDLE"
-        self.facts = []
-        self.completed = []
-        self.results = []
-        self.max_chars = max_chars
-
-    def set_goal(self, goal):
-        self.goal = goal.strip()[:140]
-        self.state = "IN_PROGRESS" if self.goal else "IDLE"
-
-    def add_fact(self, fact):
-        clean = fact.strip()[:140]
-        if clean and clean not in self.facts:
-            self.facts.append(clean)
-            if len(self.facts) > 4:
-                self.facts.pop(0)
-
-    def record_completed(self, action):
-        clean = action.strip()[:120]
-        if clean:
-            self.completed.append(clean)
-            if len(self.completed) > 3:
-                self.completed.pop(0)
-
-    def add_result(self, result):
-        clean = result.strip()[:140]
-        if clean and clean not in self.results:
-            self.results.append(clean)
-            if len(self.results) > 3:
-                self.results.pop(0)
-
-    def clear(self):
-        self.goal = ""
-        self.state = "IDLE"
-        self.facts.clear()
-        self.completed.clear()
-        self.results.clear()
-
-    def format_block(self):
-        if not self.goal and not self.facts and not self.completed:
-            return ""
-        parts = ["[TASK STATE (BMW)]"]
-        if self.goal: parts.append(f"GOAL: {self.goal}")
-        if self.state: parts.append(f"STATE: {self.state}")
-        if self.facts: parts.append("FACTS:\n- " + "\n- ".join(self.facts))
-        if self.completed: parts.append("COMPLETED: " + " -> ".join(self.completed))
-        if self.results: parts.append("RESULTS:\n- " + "\n- ".join(self.results))
-        res = "\n".join(parts)
-        return res[:self.max_chars]
 
 # --- Small Model Tool Repair & Universal Parser ---
 def repair_tool_json(raw_text):
@@ -149,7 +106,7 @@ def repair_tool_json(raw_text):
 def normalize_tool_call(tool_name, args):
     tool = str(tool_name).lower().strip()
     
-    # If chrome_tabs or browser_tabs is called with a URL argument, user wants to navigate!
+    # If chrome_tabs or browser_tabs is called with a URL argument, user wants to navigate
     if tool in ["chrome_tabs", "browser_tabs", "tabs", "list_tabs"] and any(k in args for k in ["url", "target", "link", "site", "web"]):
         tool = "browser"
         
@@ -176,7 +133,6 @@ def extract_tool_call(text):
     xml_match = re.search(r'<tool_call>(.*?)</tool_call>', text, re.DOTALL | re.IGNORECASE)
     if xml_match:
         inner = xml_match.group(1).strip()
-        # Case A: JSON inside XML
         json_obj = repair_tool_json(inner)
         if isinstance(json_obj, dict):
             tool = json_obj.get("tool") or json_obj.get("name") or json_obj.get("action")
@@ -184,7 +140,6 @@ def extract_tool_call(text):
             if tool:
                 return normalize_tool_call(tool, args)
 
-        # Case B: <arg_key>...</arg_key><arg_value>...</arg_value>
         tool_name_match = re.match(r'^([a-zA-Z0-9_\-]+)', inner)
         tool_name = tool_name_match.group(1) if tool_name_match else "browser"
         
@@ -221,124 +176,88 @@ def extract_tool_call(text):
 
     return None, {}
 
-# --- Local Tools Execution ---
-def execute_tool(tool_name, args):
+# --- Local Tools Execution with Observation Compiler & Deterministic Verifier ---
+def execute_tool(tool_name, args, verifier=None):
+    if verifier is None:
+        verifier = DeterministicVerifier()
+        
     tool_name = tool_name.lower().strip()
+    
     if tool_name in ["read_file", "view_file", "cat"]:
         path = args.get("path") or args.get("file") or args.get("target") or ""
         if not path:
-            return "Error: Missing 'path' argument."
+            return "Error: Missing 'path' argument.", False
         target_path = os.path.abspath(os.path.join(ROOT_DIR, path)) if not os.path.isabs(path) else path
-        if not os.path.exists(target_path):
-            return f"Error: File '{path}' does not exist."
+        v_res = verifier.verify_file_exists(target_path, min_bytes=1)
+        if not v_res.passed:
+            return f"Error: File '{path}' does not exist.", False
         try:
             with open(target_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read(1500)
-            return f"Content of {os.path.basename(path)} ({len(content)} chars):\n{content}"
+                content = f.read(2000)
+            comp = ObservationCompiler.compile_filesystem(target_path, exists=True, is_file=True, size_bytes=len(content), preview=content[:300])
+            return comp.summary, True
         except Exception as e:
-            return f"Error reading file: {e}"
+            return f"Error reading file: {e}", False
 
     elif tool_name in ["run_command", "shell", "exec"]:
         cmd = args.get("command") or args.get("cmd") or ""
         if not cmd:
-            return "Error: Missing 'command' argument."
+            return "Error: Missing 'command' argument.", False
         try:
             res = subprocess.run(
                 cmd, shell=True, cwd=ROOT_DIR,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, timeout=15
             )
-            out = (res.stdout or res.stderr or "Command executed with no output.").strip()
-            return out[:1000]
+            v_res = verifier.verify_exit_code(res.returncode, expected=0)
+            comp = ObservationCompiler.compile_terminal(cmd, res.returncode, res.stdout, res.stderr)
+            return comp.summary, v_res.passed
         except Exception as e:
-            return f"Error running command: {e}"
+            return f"Error running command: {e}", False
 
     elif tool_name in ["browser", "chrome", "open_url", "navigate"]:
         url = args.get("url") or args.get("target") or args.get("link") or ""
         if not url:
-            return "Error: Missing 'url' argument."
+            return "Error: Missing 'url' argument.", False
         if not url.startswith("http://") and not url.startswith("https://"):
             url = f"https://{url}"
-            
-        # Try Chrome CDP on port 9222 first if active
-        cdp_used = False
+        v_url = verifier.verify_browser_url(url)
         try:
-            cdp_new_url = f"http://127.0.0.1:9222/json/new?{urllib.parse.quote(url, safe=':/?&=')}"
-            req = urllib.request.Request(cdp_new_url, data=b"", headers={"User-Agent": "PotatoClaw-CDP"}, method="PUT")
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                tab_data = json.loads(resp.read().decode('utf-8'))
-                cdp_used = True
-                return f"[Chrome CDP Active] Opened new tab for '{url}' (Target ID: {tab_data.get('id', 'N/A')}, Title: {tab_data.get('title', 'Loading...')})"
-        except Exception:
-            pass
-
-        # Fallback to system Chrome / default browser
-        try:
-            if sys.platform == "win32":
-                subprocess.run(["cmd.exe", "/c", "start", "", url], shell=False)
-            else:
-                import webbrowser
-                webbrowser.open(url)
-            return f"[Browser Opened] Navigated to '{url}' in Chrome."
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PotatoClaw/3.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                html = resp.read().decode('utf-8', errors='ignore')
+                title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+                title = title_match.group(1).strip() if title_match else url
+                text = re.sub(r'<[^>]+>', ' ', html)
+                snippet = " ".join(text.split())[:350]
+                comp = ObservationCompiler.compile_browser(url, title, snippet)
+                return comp.summary, True
         except Exception as e:
-            return f"Error opening browser for '{url}': {e}"
+            comp = ObservationCompiler.compile_browser(url, url, f"Could not fetch full body: {e}")
+            return comp.summary, v_url.passed
 
-    elif tool_name in ["chrome_tabs", "browser_tabs", "list_tabs"]:
-        try:
-            req = urllib.request.Request("http://127.0.0.1:9222/json/list", headers={"User-Agent": "PotatoClaw-CDP"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                tabs = json.loads(resp.read().decode('utf-8'))
-                if not tabs:
-                    return "Chrome CDP is active on port 9222, but no active page tabs found."
-                res = [f"[{idx+1}] {t.get('title', 'Untitled')} | URL: {t.get('url', 'about:blank')}" for idx, t in enumerate(tabs) if t.get('type') == 'page']
-                return f"Active Chrome Tabs ({len(res)}):\n" + "\n".join(res)
-        except Exception:
-            return "Chrome CDP is not running on port 9222. Run `.\\scripts\\launch-chrome-debug.ps1` to enable Chrome tab inspection."
-
-    elif tool_name in ["fetch_news", "news", "breaking_news"]:
-        cat = args.get("category") or args.get("cat") or "tech"
+    elif tool_name == "fetch_news":
+        cat = args.get("category") or "tech"
         arts = fetch_category_news(cat, max_items=2)
-        if not arts:
-            return f"No breaking news found for category: {cat}"
-        res = [f"- {a['title']} (Source: {a['source']}, Link: {a['link']})" for a in arts]
-        return "\n".join(res)
+        if arts:
+            lines = [f"Found {len(arts)} breaking stories in {cat.upper()}:"]
+            for a in arts:
+                lines.append(f"- {a['title']} (Source: {a['source']}, Link: {a['link']})")
+            return "\n".join(lines), True
+        return f"No recent breaking news found for category '{cat}'.", False
 
-    elif tool_name in ["search_web", "web_search", "web_read", "read_page"]:
-        url = args.get("url") or args.get("query") or ""
-        if url.startswith("http://") or url.startswith("https://"):
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    html = resp.read().decode('utf-8', errors='replace')
-                    text = re.sub(r'<[^>]+>', ' ', html)
-                    text = re.sub(r'\s+', ' ', text).strip()
-                    title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
-                    title = title_match.group(1).strip() if title_match else "Page"
-                    return f"Title: \"{title}\"\nURL: {url}\nContent Snippet:\n{text[:600]}..."
-            except Exception as e:
-                return f"Error reading web page: {e}"
-        return f"Web search results for '{url}': Please provide a URL to read or use fetch_news for curated stories."
+    return f"Unknown tool: {tool_name}", False
 
-    return f"Unknown tool: {tool_name}"
-
-# --- Model Client ---
+# --- Model Health & Query ---
 def check_model_server():
     try:
-        req = urllib.request.Request(SPARK_HEALTH_URL, headers={"User-Agent": "PotatoClaw-Chat"})
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            return resp.status in [200, 204]
+        req = urllib.request.Request(SPARK_HEALTH_URL)
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            return resp.status == 200
     except Exception:
-        try:
-            req = urllib.request.Request(
-                "http://127.0.0.1:11435/v1/models",
-                headers={"User-Agent": "PotatoClaw-Chat"}
-            )
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                return True
-        except Exception:
-            return False
+        return False
 
-def call_potato_agent(messages, max_tokens=256, temperature=0.2):
+def call_potato_agent(messages, max_tokens=120, temperature=0.2):
     payload = {
         "model": MODEL_ID,
         "messages": messages,
@@ -358,7 +277,6 @@ def call_potato_agent(messages, max_tokens=256, temperature=0.2):
             msg = data['choices'][0]['message']
             content = (msg.get('content') or msg.get('reasoning_content') or '').strip()
             
-            # Remove thinking tag if present
             if "</think>" in content:
                 content = content.split("</think>")[-1].strip()
             
@@ -380,23 +298,21 @@ def call_potato_agent(messages, max_tokens=256, temperature=0.2):
             "content": f"[Error connecting to Spark model server: {e}]"
         }
 
-# --- System Prompt Construction ---
-def build_system_prompt(bmw_state="", tools_enabled=True):
-    base = "You are PotatoAI 🥔, an ultra-fast, capable local AI computer agent created by PotatoClaw."
+def build_system_prompt_v3(bwm_block="", tools_enabled=True):
+    base = "You are PotatoAI 🥔, an ultra-fast, capable local AI computer agent powered by PotatoClaw V3 architecture."
     rules = [
         "Be concise, clear, and direct.",
         "When answering questions or writing code, provide working, accurate solutions.",
     ]
     if tools_enabled:
-        rules.append("You have access to tools: browser(url), chrome_tabs(), read_file(path), run_command(command), fetch_news(category), search_web(url).")
+        rules.append("You have access to tools: browser(url), read_file(path), run_command(command), fetch_news(category).")
         rules.append("To call a tool, output JSON: `{\"tool\": \"tool_name\", \"args\": {\"param\": \"val\"}}`")
     
     prompt = f"{base}\n" + "\n".join(f"- {r}" for r in rules)
-    if bmw_state:
-        prompt += f"\n\n{bmw_state}"
+    if bwm_block:
+        prompt += f"\n\n{bwm_block}"
     return prompt
 
-# --- Stats helper ---
 def get_system_stats():
     vram = "N/A"
     try:
@@ -420,18 +336,21 @@ def get_system_stats():
 
     return {"vram": vram, "ram": ram}
 
-# --- Interactive Chat Loop ---
+# --- Interactive Chat Loop with Full PotatoClaw V3 Architecture ---
 def run_interactive_chat():
-    bmw = BoundedWorkingMemory(max_chars=850)
+    bwm = BoundedWorkingMemory(max_total_chars=850)
+    verifier = DeterministicVerifier()
+    failure_store = FailureMemoryStore()
+    loop_detector = LoopDetector(max_identical_repeats=3)
     tools_enabled = True
     history = []
     
     print(f"\n{CYAN}{BOLD}==================================================================={RESET}")
-    print(f"{CYAN}{BOLD}   🥔 POTATOCLAW AI AGENT CHAT (SPARK-X2.5-4B + BMW ARCHITECTURE) {RESET}")
+    print(f"{CYAN}{BOLD}   🥔 POTATOCLAW V3 AI AGENT CHAT (GRAPH-LLM & BWM ARCHITECTURE)  {RESET}")
     print(f"{CYAN}{BOLD}==================================================================={RESET}")
     print(f" {DIM}Hardware: GTX 1650 (4GB VRAM) | Context: 2048 Tokens | Zero Cloud{RESET}")
+    print(f" {DIM}Subsystems: BWM + Deterministic Verifier + Loop Breaker Active{RESET}")
     
-    # Preflight Check
     server_online = check_model_server()
     if server_online:
         print(f" {GREEN}[✔] Local Model Server: ONLINE (http://127.0.0.1:11435/v1){RESET}")
@@ -440,7 +359,7 @@ def run_interactive_chat():
         print(f" {DIM}    Tip: Start the model server in PowerShell with:{RESET}")
         print(f"    {BOLD}.\\scripts\\start-spark-potato.ps1{RESET}\n")
 
-    print(f"{DIM} Commands: /reset, /stats, /bmw, /tools, /news [cat], /help, /exit{RESET}")
+    print(f"{DIM} Commands: /reset, /stats, /bwm, /tools, /news [cat], /help, /exit{RESET}")
     print(f"{CYAN}-------------------------------------------------------------------{RESET}\n")
 
     while True:
@@ -453,35 +372,38 @@ def run_interactive_chat():
         if not user_input:
             continue
 
-        # Slash Commands
         cmd = user_input.lower()
         if cmd in ["/exit", "/quit", "/q", "exit", "quit"]:
             print(f"\n{CYAN}Exiting Potato AI Agent Chat. Keep crunching! 🥔{RESET}")
             break
 
         elif cmd in ["/reset", "/clear", "/c"]:
-            bmw.clear()
+            bwm.clear()
             history.clear()
+            loop_detector.recent_actions.clear()
             purge_all_caches(verbose=False)
             reset_llama_server_kv_cache()
-            print(f"{YELLOW}[✔] Memory, context history, and KV slots cleared. Fresh start!{RESET}\n")
+            print(f"{YELLOW}[✔] PotatoClaw V3 BWM, loop memory, and KV slots cleared. Fresh start!{RESET}\n")
             continue
 
         elif cmd in ["/stats", "/s"]:
             stats = get_system_stats()
-            print(f"\n{CYAN}--- PotatoClaw System & Memory Stats ---{RESET}")
-            print(f" GPU VRAM   : {stats['vram']}")
-            print(f" System RAM : {stats['ram']}")
-            print(f" Context Max: 2048 Tokens")
-            print(f" BMW State  : {len(bmw.format_block())} / 850 chars")
-            print(f" History    : {len(history)} turns active\n")
+            b_block = bwm.format_prompt_block()
+            print(f"\n{CYAN}--- PotatoClaw V3 System & Architectural Stats ---{RESET}")
+            print(f" GPU VRAM       : {stats['vram']}")
+            print(f" System RAM     : {stats['ram']}")
+            print(f" Context Budget : Hard cap <= 2048 Tokens")
+            print(f" BWM Active Size: {len(b_block)} / 850 chars")
+            print(f" Protected Facts: {len(bwm.protected_keys)}")
+            print(f" Loop Breaker   : Active (Max 3 repeats)")
+            print(f" History Turns  : {len(history)} turns active\n")
             continue
 
-        elif cmd in ["/bmw", "/memory"]:
-            b_block = bmw.format_block()
-            print(f"\n{CYAN}--- Bounded Working Memory (BMW) State ---{RESET}")
-            print(b_block if b_block else "BMW State is currently empty.")
-            print(f"Budget: {len(b_block)} / 850 characters\n")
+        elif cmd in ["/bwm", "/bmw", "/memory"]:
+            b_block = bwm.format_prompt_block()
+            print(f"\n{CYAN}--- PotatoClaw V3 Bounded Working Memory (BWM) ---{RESET}")
+            print(b_block if b_block else "BWM State is currently empty.")
+            print(f"Budget: {len(b_block)} / 850 characters (Strictly Bounded)\n")
             continue
 
         elif cmd in ["/tools", "/t"]:
@@ -507,25 +429,23 @@ def run_interactive_chat():
             continue
 
         elif cmd in ["/help", "/h", "/?"]:
-            print(f"\n{CYAN}--- Potato AI Chat Commands ---{RESET}")
-            print(f"  {BOLD}/reset{RESET}       : Clear conversation and reset model KV memory slot")
-            print(f"  {BOLD}/stats{RESET}       : Display VRAM, RAM, and context tokens")
-            print(f"  {BOLD}/bmw{RESET}         : Inspect active Bounded Working Memory block")
+            print(f"\n{CYAN}--- Potato AI V3 Chat Commands ---{RESET}")
+            print(f"  {BOLD}/reset{RESET}       : Clear BWM state and reset model KV memory slot")
+            print(f"  {BOLD}/stats{RESET}       : Display VRAM, RAM, and BWM context stats")
+            print(f"  {BOLD}/bwm{RESET}         : Inspect active Bounded Working Memory block")
             print(f"  {BOLD}/tools{RESET}       : Toggle agent tool calling (run_command, read_file, news)")
             print(f"  {BOLD}/news [cat]{RESET}  : Query breaking news (tech / defence / physics)")
             print(f"  {BOLD}/exit{RESET}        : Exit chat\n")
             continue
 
-        # Update BMW Goal
-        if not bmw.goal:
-            bmw.set_goal(user_input)
+        # Add user turn to BWM
+        bwm.add_fact(f"User asked: {user_input[:80]}")
 
-        # Build Context Messages
-        bmw_block = bmw.format_block()
-        sys_prompt = build_system_prompt(bmw_block, tools_enabled)
+        # Build Context with BWM prompt block
+        bwm_block = bwm.format_prompt_block()
+        sys_prompt = build_system_prompt_v3(bwm_block, tools_enabled)
         
-        # Keep last 4 conversational turns to respect 2048 token budget
-        recent_history = history[-6:]
+        recent_history = history[-4:]
         messages = [{"role": "system", "content": sys_prompt}]
         messages.extend(recent_history)
         messages.append({"role": "user", "content": user_input})
@@ -539,57 +459,63 @@ def run_interactive_chat():
 
         agent_text = resp["content"]
         
-        # Check if the model attempted a tool call (XML, JSON, or function style)
+        # Tool Handling with V3 Loop Detector and Verifier
         tool_call_handled = False
         if tools_enabled:
             tool_name, tool_args = extract_tool_call(agent_text)
             if tool_name:
-                print(f"\n{YELLOW}⚙️ Executing Tool: {BOLD}{tool_name}{RESET} with args: {tool_args}")
-                tool_result = execute_tool(tool_name, tool_args)
-                print(f"{DIM}Result ({len(tool_result)} chars):{RESET}\n{tool_result}")
-                
-                # Record to BMW
-                bmw.record_completed(f"{tool_name}({tool_args})")
-                bmw.add_result(tool_result[:100])
-                
-                # Clean prompt for follow-up
-                clean_agent_call = re.sub(r'<tool_call>.*?</tool_call>', '', agent_text, flags=re.DOTALL).strip()
-                if not clean_agent_call:
-                    clean_agent_call = f"I executed {tool_name} with {tool_args}."
+                # Check Loop Detector
+                is_loop, loop_msg = loop_detector.record_and_check(tool_name, tool_args)
+                if is_loop:
+                    print(f"\n{RED}🛑 LOOP DETECTED: {loop_msg}{RESET}")
+                    bwm.add_protected_fact(f"LOOP DETECTED on {tool_name}. Halting repeat.")
+                else:
+                    print(f"\n{YELLOW}⚙️ Executing Tool (V3 Verified): {BOLD}{tool_name}{RESET} with args: {tool_args}")
+                    tool_result, is_verified = execute_tool(tool_name, tool_args, verifier=verifier)
+                    ver_badge = f"{GREEN}[✔ VERIFIED]{RESET}" if is_verified else f"{YELLOW}[FAILED]{RESET}"
+                    print(f"{DIM}Observation ({len(tool_result)} chars) {ver_badge}:{RESET}\n{tool_result}")
                     
-                follow_up_msgs = [
-                    {"role": "system", "content": build_system_prompt(bmw.format_block(), False)},
-                    {"role": "user", "content": user_input},
-                    {"role": "assistant", "content": clean_agent_call},
-                    {"role": "user", "content": f"Tool output was:\n{tool_result}\nProvide final answer now."}
-                ]
-                print(f"\n{CYAN}{BOLD}PotatoAI 🥔 > {RESET}", end="", flush=True)
-                final_resp = call_potato_agent(follow_up_msgs)
-                if final_resp["success"]:
-                    agent_text = final_resp["content"]
-                    print(agent_text)
-                    tool_call_handled = True
-                
+                    # Record to BWM & Failure store if failed
+                    if is_verified:
+                        bwm.add_fact(f"Completed {tool_name}: {tool_result[:60]}")
+                    else:
+                        failure_store.record_failure("chat_turn", f"{tool_name}({tool_args})", tool_result[:80])
+                        bwm.add_fact(f"Tool {tool_name} failed: {tool_result[:60]}")
+                    
+                    clean_agent_call = re.sub(r'<tool_call>.*?</tool_call>', '', agent_text, flags=re.DOTALL).strip()
+                    if not clean_agent_call:
+                        clean_agent_call = f"I executed {tool_name} with {tool_args}."
+                        
+                    follow_up_msgs = [
+                        {"role": "system", "content": build_system_prompt_v3(bwm.format_prompt_block(), False)},
+                        {"role": "user", "content": user_input},
+                        {"role": "assistant", "content": clean_agent_call},
+                        {"role": "user", "content": f"Tool output ({ver_badge}):\n{tool_result}\nProvide final concise answer now."}
+                    ]
+                    print(f"\n{CYAN}{BOLD}PotatoAI 🥔 > {RESET}", end="", flush=True)
+                    final_resp = call_potato_agent(follow_up_msgs)
+                    if final_resp["success"]:
+                        agent_text = final_resp["content"]
+                        print(agent_text)
+                        tool_call_handled = True
+                    
         if not tool_call_handled:
-            # Clean any stray XML tags from text
             clean_display = re.sub(r'<tool_call>.*?</tool_call>', '', agent_text, flags=re.DOTALL).strip()
             print(clean_display if clean_display else agent_text)
 
-        # Print latency and token stats
         ms = round(resp['elapsed'] * 1000)
         toks = resp.get('total_tokens', 0)
         tok_info = f" | {toks} tokens" if toks > 0 else ""
         print(f"\n{DIM}[{ms}ms{tok_info}]{RESET}\n")
 
-        # Save to memory history
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": agent_text})
 
 def test_single_turn(prompt):
     """Executes a single test turn without entering interactive mode."""
-    bmw = BoundedWorkingMemory()
-    bmw.set_goal(prompt)
-    sys_prompt = build_system_prompt(bmw.format_block(), True)
+    bwm = BoundedWorkingMemory()
+    bwm.add_fact(prompt)
+    sys_prompt = build_system_prompt_v3(bwm.format_prompt_block(), True)
     messages = [
         {"role": "system", "content": sys_prompt},
         {"role": "user", "content": prompt}

@@ -24,6 +24,15 @@ try:
 except ImportError:
     def purge_all_caches(verbose=False): pass
 
+try:
+    from potato_bwm import BoundedWorkingMemory
+    from potato_verifier import DeterministicVerifier
+    from potato_compiler import ObservationCompiler
+except ImportError:
+    BoundedWorkingMemory = None
+    DeterministicVerifier = None
+    ObservationCompiler = None
+
 # Ensure UTF-8 output on Windows
 if sys.platform == "win32":
     try:
@@ -116,30 +125,41 @@ def fetch_category_news(category, max_items=5):
 def generate_single_story_x_post(category, article):
     """
     Crafts ONE high-impact post tailored strictly under 280 characters for Non-Premium X users
-    using PotatoClaw V2 Bounded Working Memory.
+    using PotatoClaw V3 Bounded Working Memory and Deterministic Verifier.
     """
     link = article.get('link', '').strip()
     link_section = f"\n\n🔗 {link}" if link else ""
     
-    prompt = f"""[TASK STATE (BMW)]
+    # PotatoClaw V3: Bounded Working Memory with Protected Constraints
+    if BoundedWorkingMemory is not None:
+        bwm = BoundedWorkingMemory(max_total_chars=600)
+        bwm.add_protected_fact(f"Constraint: Strict Twitter limit <= {X_FREE_CHAR_LIMIT} characters.")
+        bwm.add_protected_fact(f"Category: {category.upper()}")
+        bwm.add_protected_fact("Rule: Start with emoji hook (🚀 / 🛡️ / ⚛️). End with 2 hashtags.")
+        bwm.add_fact(f"Headline: {article['title']}")
+        bwm.add_fact(f"Source: {article['source']}")
+        bwm.add_fact(f"Key Intel: {article['desc'][:140]}")
+        bwm_block = bwm.format_prompt_block()
+    else:
+        bwm_block = f"[TASK STATE (BMW)]\nGOAL: Post single story for {category.upper()}\nHEADLINE: {article['title']}\nFACTS: {article['desc'][:160]}"
+
+    prompt = f"""{bwm_block}
 GOAL: Create ONE viral X (Twitter) post for this single story.
 CATEGORY: {category.upper()}
 HEADLINE: {article['title']}
-SOURCE: {article['source']}
-FACTS: {article['desc'][:160]}
 
 RULES:
 1. Under 210 characters text (plus link).
 2. Start with an emoji hook (🚀 / 🛡️ / ⚛️).
 3. State what happened and why it matters in 1-2 punchy sentences.
-4. End with 2 hashtags e.g. #{category.capitalize()} #Tech.
+4. End with 2 hashtags e.g. #{category.capitalize()} #Innovation.
 5. Output ONLY the tweet text. No markdown fences."""
 
     try:
         payload = {
             "model": MODEL_ID,
             "messages": [
-                {"role": "system", "content": "You are PotatoClaw V2 X-Engine. Output ONLY the single post text."},
+                {"role": "system", "content": "You are PotatoClaw V3 X-Engine. Output ONLY the viral tweet text directly. Do not think out loud or explain. No preambles."},
                 {"role": "user", "content": prompt}
             ],
             "max_tokens": 100,
@@ -162,6 +182,12 @@ RULES:
                 content = content.split("</think>")[-1].strip()
             content = content.replace("```json", "").replace("```", "").strip().strip('"')
             
+            # Clean common preambles
+            for preamble in ["tweet text:", "here is the tweet:", "post text:"]:
+                if preamble in content.lower():
+                    idx = content.lower().find(preamble)
+                    content = content[idx + len(preamble):].strip()
+            
             if content:
                 # Append link if not already present
                 if link and link not in content:
@@ -169,10 +195,17 @@ RULES:
                 else:
                     full_post = content
                     
-                # Validate length (Twitter calculates URLs as 23 chars)
+                # PotatoClaw V3 Deterministic Verification of Twitter character limit
                 effective_len = len(re.sub(r'https?://\S+', 'X'*23, full_post))
                 if effective_len <= X_FREE_CHAR_LIMIT:
                     return full_post
+                else:
+                    # Deterministically trim excess without breaking words
+                    overshoot = effective_len - X_FREE_CHAR_LIMIT
+                    trimmed_content = content[:-overshoot - 5].rsplit(' ', 1)[0] + "..."
+                    candidate = f"{trimmed_content}{link_section}"
+                    if len(re.sub(r'https?://\S+', 'X'*23, candidate)) <= X_FREE_CHAR_LIMIT:
+                        return candidate
     except Exception:
         pass
         

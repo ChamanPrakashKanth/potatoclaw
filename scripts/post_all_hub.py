@@ -96,14 +96,15 @@ def run_x_post_workflow(category="tech", auto_open=True):
 def show_interactive_hub():
     while True:
         print("\n" + "=" * 65)
-        print("   POTATOCLAW MASTER AUTOMATION & AGENT HUB")
+        print("   POTATOCLAW V3 MASTER AUTOMATION & AGENT HUB")
         print("=" * 65)
         print(" Model: Spark-X2.5-4B (Q4_K_M) | GPU: GTX 1650 | Context: 2048")
+        print(" Engine: Graph-LLM DAG + BWM + Deterministic Verifier")
         print("-" * 65)
-        print(" [1] 🥔 Chat with Potato AI Agent (Interactive Mode)")
-        print(" [2] 🐦 Post Single-Story News to X (Tech / Defence / Physics)")
-        print(" [3] 📊 Run PotatoClaw V2 Benchmark Suite")
-        print(" [4] 🧪 Run PotatoClaw V2 Architectural Tests")
+        print(" [1] 🥔 Chat with Potato AI Agent V3 (Interactive Mode)")
+        print(" [2] 🐦 Post Single-Story News to X (V3 BWM & Verifier Powered)")
+        print(" [3] 📊 Run PotatoBench V3 Benchmark Suite (10 Tasks + 8 Ablations)")
+        print(" [4] 🧪 Run PotatoClaw V3 Comprehensive Tests (48 Assertions)")
         print(" [Q] Quit")
         print("-" * 65)
         
@@ -126,11 +127,11 @@ def show_interactive_hub():
                 try: input("\nPress Enter to return to main menu...")
                 except EOFError: pass
         elif choice == '3':
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potato_v2"])
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potatobench"])
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
         elif choice == '4':
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")])
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
         else:
