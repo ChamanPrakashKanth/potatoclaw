@@ -96,18 +96,19 @@ def run_x_post_workflow(category="tech", auto_open=True):
 def show_interactive_hub():
     while True:
         print("\n" + "=" * 65)
-        print("   POTATOCLAW MASTER POSTING & CONTENT AUTOMATION HUB")
+        print("   POTATOCLAW MASTER AUTOMATION & AGENT HUB")
         print("=" * 65)
         print(" Model: Spark-X2.5-4B (Q4_K_M) | GPU: GTX 1650 | Context: 2048")
         print("-" * 65)
-        print(" [1] 🐦 Post Single-Story News to X (Tech / Defence / Physics)")
-        print(" [2] 📊 Run PotatoClaw V2 Benchmark Suite")
-        print(" [3] 🧪 Run PotatoClaw V2 Architectural Tests")
+        print(" [1] 🥔 Chat with Potato AI Agent (Interactive Mode)")
+        print(" [2] 🐦 Post Single-Story News to X (Tech / Defence / Physics)")
+        print(" [3] 📊 Run PotatoClaw V2 Benchmark Suite")
+        print(" [4] 🧪 Run PotatoClaw V2 Architectural Tests")
         print(" [Q] Quit")
         print("-" * 65)
         
         try:
-            choice = input("Select an option [1-3, Q]: ").strip().lower()
+            choice = input("Select an option [1-4, Q]: ").strip().lower()
         except EOFError:
             break
             
@@ -115,21 +116,25 @@ def show_interactive_hub():
             print("Exiting PotatoClaw Hub. Goodbye!")
             break
         elif choice == '1':
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "potato_chat.py")])
+            try: input("\nPress Enter to return to main menu...")
+            except EOFError: pass
+        elif choice == '2':
             cat = select_category()
             if cat:
                 run_x_post_workflow(cat)
                 try: input("\nPress Enter to return to main menu...")
                 except EOFError: pass
-        elif choice == '2':
+        elif choice == '3':
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potato_v2"])
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
-        elif choice == '3':
+        elif choice == '4':
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
         else:
-            print("[!] Invalid choice. Please select 1, 2, 3, or Q.")
+            print("[!] Invalid choice. Please select 1, 2, 3, 4, or Q.")
 
 def select_category():
     print("\nSelect Category:")
@@ -145,7 +150,9 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         cmd = sys.argv[1].lower()
         cat = sys.argv[2].lower() if len(sys.argv) > 2 else "tech"
-        if cmd == "x":
+        if cmd in ["chat", "agent", "potato"]:
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "potato_chat.py")])
+        elif cmd == "x":
             run_x_post_workflow(cat)
         else:
             show_interactive_hub()

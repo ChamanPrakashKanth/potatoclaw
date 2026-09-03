@@ -67,7 +67,12 @@ Tested on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (6 Cores)
 
 ---
 
-## 📱 Content Automation Engines
+## 📱 PotatoClaw Agent & Content Engines
+
+### 🥔 Potato AI Agent Chat (Interactive Terminal Assistant)
+- **Engine**: Powered by `Spark-X2.5-4B` with PotatoClaw V2 Bounded Working Memory (BMW).
+- **Features**: Real-time back-and-forth conversation, safe local tool execution (`run_command`, `read_file`, `fetch_news`), auto-repair of small-model JSON syntax, and `/reset`, `/stats`, `/tools`, `/news` slash commands.
+- **Budget**: Strict $\le$ 2048 token context management with deterministic memory decay.
 
 ### 🐦 X (Twitter) Single-Story News Poster
 - **Target**: Non-premium standard X accounts (strict 280-character budget).
@@ -93,9 +98,18 @@ Tested on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (6 Cores)
 
 ## 🎮 1-Click Launchers
 
-### Master Posting & Automation Hub
+### 🥔 Potato AI Agent Chat
 ```cmd
-:: Launch Interactive Menu
+:: Launch interactive chat
+potato_chat.bat
+
+:: Or run directly via PowerShell
+.\potato_chat.ps1
+```
+
+### Master Automation Hub
+```cmd
+:: Launch Interactive Menu (Agent Chat + X Poster + Benchmarks)
 post_all.bat
 
 :: Or run directly via PowerShell
@@ -104,6 +118,9 @@ post_all.bat
 
 ### Direct CLI Commands
 ```cmd
+:: Chat directly with Potato AI
+post_all.bat chat
+
 :: Post Tech / Defence / Physics single-story to X
 post_all.bat x tech
 post_all.bat x defence
@@ -111,6 +128,7 @@ post_all.bat x physics
 ```
 
 ### Dedicated Launchers
+- **[`potato_chat.bat`](file:///c:/Users/user/Downloads/Potatoclaw/potato_chat.bat)**: Direct interactive Potato AI Agent Chat.
 - **[`post_tech_defence_physics_news.bat`](file:///c:/Users/user/Downloads/Potatoclaw/post_tech_defence_physics_news.bat)**: Direct single-story X poster.
 
 ---
@@ -131,5 +149,19 @@ Detailed reports are generated in:
 
 ---
 
+## 🙏 Credits & Attribution
+
+PotatoClaw is built upon and inspired by the incredible open-source architecture of **[OpenClaw](https://github.com/openclaw/openclaw)**. 
+
+We extend our sincere gratitude to the OpenClaw maintainers and community for:
+- Foundational gateway protocols and multi-platform agent execution patterns
+- Comprehensive tool definitions, sandbox boundaries, and session models
+- Pioneering open-source autonomous agent architectures that make small-model local experimentation possible.
+
+For upstream OpenClaw documentation and source, visit [https://docs.openclaw.ai](https://docs.openclaw.ai) and [https://github.com/openclaw/openclaw](https://github.com/openclaw/openclaw).
+
+---
+
 ## 📄 License
 MIT License. Built for the community with ❤️ for potato PC owners.
+

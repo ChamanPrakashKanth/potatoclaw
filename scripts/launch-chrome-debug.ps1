@@ -54,7 +54,7 @@ try {
         New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
     }
     
-    Start-Process -FilePath $ChromeExe -ArgumentList "--remote-debugging-port=9222", "--user-data-dir=`"$ProfileDir`"", "--no-first-run", "--no-default-browser-check"
+    Start-Process -FilePath $ChromeExe -ArgumentList "--remote-debugging-port=9222", "--remote-allow-origins=*", "--user-data-dir=`"$ProfileDir`"", "--no-first-run", "--no-default-browser-check"
     
     Start-Sleep -Seconds 3
     try {
