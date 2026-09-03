@@ -197,6 +197,9 @@ For upstream OpenClaw documentation and source, visit [https://docs.openclaw.ai]
 ### ⚡ Gemini
 Architectural evolution, empirical PotatoBench benchmark design, bounded working memory algorithms, deterministic verifiers, and systems co-engineering designed and implemented with **Google DeepMind's Gemini**.
 
+### 🤖 ChatGPT
+Conceptual exploration, baseline prompt structuring ideas, and research dialogue developed in consultation with **OpenAI's ChatGPT**.
+
 ---
 
 ## 📄 License
