@@ -38,7 +38,7 @@ try {
     Write-Host "  -> Spark Server is already online and ready!" -ForegroundColor Green
 } catch {
     Write-Host "  -> Starting custom Spark BWM llama-server in WSL..." -ForegroundColor Yellow
-    wsl -u openclaw -d OpenClawGateway -e bash -c "nohup /home/openclaw/llama.cpp-spark/build/bin/llama-server -m /home/openclaw/Spark-X2.5-4B-Q4_K_M.gguf -c 2048 -ngl 26 -t 6 --host 0.0.0.0 --port 11435 --alias spark-x2.5-4b:latest > /home/openclaw/llama-server.log 2>&1 &"
+    wsl -u openclaw -d OpenClawGateway -e bash -c "nohup /home/openclaw/llama.cpp-spark/build/bin/llama-server -m /home/openclaw/Spark-X2.5-4B-Q4_K_M.gguf -c 2048 -np 1 -fa on -ngl 26 -t 6 --host 0.0.0.0 --port 11435 --alias spark-x2.5-4b:latest > /home/openclaw/llama-server.log 2>&1 &"
     
     Write-Host "  -> Waiting for model tensors to load..." -ForegroundColor Yellow
     for ($i = 0; $i -lt 30; $i++) {

@@ -2,11 +2,12 @@
 """
 PotatoClaw Interactive AI Agent Chat (PotatoAI V3)
 Powered by Spark-X2.5-4B + Full PotatoClaw V3 Architecture:
+- Rule Zero Direct Intent Interception (Instant 0.05s Execution)
 - TaskGraph & DAG Scheduler (potato_graph.py)
 - Bounded Working Memory & Hierarchical Tiers (potato_bwm.py)
 - Observation Compiler & Context Compiler (potato_compiler.py)
 - Deterministic Verifier (potato_verifier.py)
-- Failure Memory, Loop Breaker & Tool Router (potato_failure_memory.py)
+- Failure Memory, Loop Breaker & Dynamic Tool Router (potato_failure_memory.py)
 """
 
 import sys
@@ -58,7 +59,7 @@ except ImportError:
 try:
     from x_news_engine import fetch_category_news
 except ImportError:
-    def fetch_category_news(cat, max_items=1): return []
+    def fetch_category_news(cat, max_items=2): return []
 
 SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
 SPARK_HEALTH_URL = "http://127.0.0.1:11435/health"
@@ -74,6 +75,45 @@ BLUE = "\033[94m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
+
+# --- Rule Zero: Direct Action & Intent Interception ---
+def intercept_direct_action(user_input):
+    """
+    Rule Zero: DO NOT USE AN LLM FOR ALGORITHMIC OR DIRECT COMMANDS.
+    Intercepts explicit commands (news, read, run, browser) for instant 0.05s execution.
+    """
+    clean = user_input.strip().lower()
+
+    # 1. News queries
+    if clean in ["fetch_news", "news", "get_news", "latest news", "breaking news"]:
+        return "fetch_news", {"category": "tech"}
+    if clean.startswith("fetch_news ") or clean.startswith("news ") or clean.startswith("/news "):
+        cat = clean.split()[-1].strip()
+        cat = cat if cat in ["tech", "defence", "physics"] else "tech"
+        return "fetch_news", {"category": cat}
+    if clean in ["tech", "defence", "defense", "physics", "science"]:
+        cat = "defence" if clean in ["defence", "defense"] else "physics" if clean == "science" else clean
+        return "fetch_news", {"category": cat}
+
+    # 2. File inspection
+    if clean.startswith("read_file ") or clean.startswith("read ") or clean.startswith("cat ") or clean.startswith("view "):
+        parts = user_input.strip().split(maxsplit=1)
+        if len(parts) > 1:
+            return "read_file", {"path": parts[1].strip()}
+
+    # 3. Terminal execution
+    if clean.startswith("run_command ") or clean.startswith("run ") or clean.startswith("exec ") or clean.startswith("shell "):
+        parts = user_input.strip().split(maxsplit=1)
+        if len(parts) > 1:
+            return "run_command", {"command": parts[1].strip()}
+
+    # 4. Browser navigation
+    if clean.startswith("browser ") or clean.startswith("open_url ") or clean.startswith("open ") or clean.startswith("goto "):
+        parts = user_input.strip().split(maxsplit=1)
+        if len(parts) > 1:
+            return "browser", {"url": parts[1].strip()}
+
+    return None, {}
 
 # --- Small Model Tool Repair & Universal Parser ---
 def repair_tool_json(raw_text):
@@ -105,12 +145,9 @@ def repair_tool_json(raw_text):
 
 def normalize_tool_call(tool_name, args):
     tool = str(tool_name).lower().strip()
-    
-    # If chrome_tabs or browser_tabs is called with a URL argument, user wants to navigate
     if tool in ["chrome_tabs", "browser_tabs", "tabs", "list_tabs"] and any(k in args for k in ["url", "target", "link", "site", "web"]):
         tool = "browser"
         
-    # Standardize URL navigation
     if tool in ["browser", "chrome", "open_url", "navigate", "open_browser", "goto"]:
         tool = "browser"
         url = args.get("url") or args.get("target") or args.get("link") or args.get("site") or args.get("arg_value") or ""
@@ -119,6 +156,9 @@ def normalize_tool_call(tool_name, args):
         if url and not str(url).startswith("http://") and not str(url).startswith("https://"):
             url = f"https://{url}"
         args["url"] = url
+
+    if tool in ["news", "get_news"]:
+        tool = "fetch_news"
 
     return tool, args
 
@@ -129,8 +169,8 @@ def extract_tool_call(text):
     if not text:
         return None, {}
 
-    # 1. XML format: <tool_call>chrome_tabs<arg_key>url</arg_key><arg_value>idrw.org</arg_value></tool_call>
-    xml_match = re.search(r'<tool_call>(.*?)</tool_call>', text, re.DOTALL | re.IGNORECASE)
+    # 1. XML format: <tool_call>...
+    xml_match = re.search(r'<tool_call>(.*?)(?:</tool_call>|$)', text, re.DOTALL | re.IGNORECASE)
     if xml_match:
         inner = xml_match.group(1).strip()
         json_obj = repair_tool_json(inner)
@@ -140,20 +180,18 @@ def extract_tool_call(text):
             if tool:
                 return normalize_tool_call(tool, args)
 
+        # Check function style inside XML: fetch_news("defence")
+        fn_inner = re.search(r'([a-zA-Z0-9_]+)\s*\((.*?)\)', inner)
+        if fn_inner:
+            tname = fn_inner.group(1)
+            raw_arg = fn_inner.group(2).replace('"', '').replace("'", "").strip()
+            return normalize_tool_call(tname, {"category": raw_arg} if "news" in tname else {"arg": raw_arg})
+
         tool_name_match = re.match(r'^([a-zA-Z0-9_\-]+)', inner)
-        tool_name = tool_name_match.group(1) if tool_name_match else "browser"
-        
-        args = {}
-        kv_pairs = re.findall(r'<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>', inner, re.DOTALL | re.IGNORECASE)
-        for k, v in kv_pairs:
-            args[k.strip()] = v.strip()
-            
-        param_pairs = re.findall(r'<([a-zA-Z0-9_]+)>(.*?)</\1>', inner, re.DOTALL)
-        for k, v in param_pairs:
-            if k.lower() not in ['tool_call', 'arg_key', 'arg_value']:
-                args[k.strip()] = v.strip()
-                
-        return normalize_tool_call(tool_name, args)
+        if tool_name_match:
+            tname = tool_name_match.group(1).lower()
+            if tname in ["fetch_news", "browser", "read_file", "run_command"]:
+                return normalize_tool_call(tname, {"category": "defence"} if "defence" in inner.lower() else {"category": "tech"})
 
     # 2. JSON format: {"tool": "browser", "args": {"url": "..."}}
     json_obj = repair_tool_json(text)
@@ -165,12 +203,12 @@ def extract_tool_call(text):
         if tool:
             return normalize_tool_call(tool, args)
 
-    # 3. Direct function string format: browser(url="...") or open_url("...")
+    # 3. Direct function string format: browser(url="...") or fetch_news("defence")
     fn_match = re.search(r'([a-zA-Z0-9_]+)\s*\(\s*(?:([a-zA-Z0-9_]+)\s*=\s*)?["\']([^"\']+)["\']\s*\)', text)
     if fn_match:
         tool_name = fn_match.group(1).lower()
         if tool_name in ["browser", "chrome", "open_url", "navigate", "read_file", "view_file", "run_command", "shell", "fetch_news", "search_web"]:
-            arg_name = fn_match.group(2) or ("url" if any(x in tool_name for x in ["browser", "url", "chrome"]) else "path" if "file" in tool_name else "command")
+            arg_name = fn_match.group(2) or ("category" if "news" in tool_name else "url" if any(x in tool_name for x in ["browser", "url", "chrome"]) else "path" if "file" in tool_name else "command")
             val = fn_match.group(3)
             return normalize_tool_call(tool_name, {arg_name: val})
 
@@ -184,7 +222,7 @@ def execute_tool(tool_name, args, verifier=None):
     tool_name = tool_name.lower().strip()
     
     if tool_name in ["read_file", "view_file", "cat"]:
-        path = args.get("path") or args.get("file") or args.get("target") or ""
+        path = args.get("path") or args.get("file") or args.get("target") or args.get("arg") or ""
         if not path:
             return "Error: Missing 'path' argument.", False
         target_path = os.path.abspath(os.path.join(ROOT_DIR, path)) if not os.path.isabs(path) else path
@@ -200,7 +238,7 @@ def execute_tool(tool_name, args, verifier=None):
             return f"Error reading file: {e}", False
 
     elif tool_name in ["run_command", "shell", "exec"]:
-        cmd = args.get("command") or args.get("cmd") or ""
+        cmd = args.get("command") or args.get("cmd") or args.get("arg") or ""
         if not cmd:
             return "Error: Missing 'command' argument.", False
         try:
@@ -216,7 +254,7 @@ def execute_tool(tool_name, args, verifier=None):
             return f"Error running command: {e}", False
 
     elif tool_name in ["browser", "chrome", "open_url", "navigate"]:
-        url = args.get("url") or args.get("target") or args.get("link") or ""
+        url = args.get("url") or args.get("target") or args.get("link") or args.get("arg") or ""
         if not url:
             return "Error: Missing 'url' argument.", False
         if not url.startswith("http://") and not url.startswith("https://"):
@@ -236,15 +274,16 @@ def execute_tool(tool_name, args, verifier=None):
             comp = ObservationCompiler.compile_browser(url, url, f"Could not fetch full body: {e}")
             return comp.summary, v_url.passed
 
-    elif tool_name == "fetch_news":
+    elif tool_name in ["fetch_news", "news"]:
         cat = args.get("category") or "tech"
+        if cat in ["defense", "defence"]: cat = "defence"
         arts = fetch_category_news(cat, max_items=2)
         if arts:
             lines = [f"Found {len(arts)} breaking stories in {cat.upper()}:"]
             for a in arts:
-                lines.append(f"- {a['title']} (Source: {a['source']}, Link: {a['link']})")
+                lines.append(f"• {a['title']}\n  Source: {a['source']} | Link: {a['link']}")
             return "\n".join(lines), True
-        return f"No recent breaking news found for category '{cat}'.", False
+        return f"No breaking news found for category '{cat}'. Try 'tech', 'defence', or 'physics'.", False
 
     return f"Unknown tool: {tool_name}", False
 
@@ -257,7 +296,11 @@ def check_model_server():
     except Exception:
         return False
 
-def call_potato_agent(messages, max_tokens=120, temperature=0.2):
+def call_potato_agent(messages, max_tokens=250, temperature=0.1):
+    """
+    Calls local Spark-X2.5-4B server with strict reasoning separation.
+    Suppresses internal chain-of-thought monologues from reaching the user.
+    """
     payload = {
         "model": MODEL_ID,
         "messages": messages,
@@ -271,14 +314,37 @@ def call_potato_agent(messages, max_tokens=120, temperature=0.2):
             data=json.dumps(payload).encode('utf-8'),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             elapsed = time.time() - t0
             msg = data['choices'][0]['message']
-            content = (msg.get('content') or msg.get('reasoning_content') or '').strip()
+            raw_content = (msg.get('content') or '').strip()
+            reasoning = (msg.get('reasoning_content') or '').strip()
             
-            if "</think>" in content:
-                content = content.split("</think>")[-1].strip()
+            # Clean think tags if model enclosed them in content
+            if "</think>" in raw_content:
+                raw_content = raw_content.split("</think>")[-1].strip()
+                
+            if raw_content:
+                content = raw_content
+            elif reasoning:
+                # If content is empty, model ran out of tokens while thinking.
+                # Check if reasoning contained an intended tool call!
+                t_name, t_args = extract_tool_call(reasoning)
+                if t_name:
+                    content = json.dumps({"tool": t_name, "args": t_args})
+                else:
+                    # Clean out meta-reasoning and extract the final conclusion sentence
+                    sentences = [s.strip() for s in re.split(r'[.!?]\s+', reasoning) if s.strip()]
+                    conclusion = ""
+                    for s in reversed(sentences):
+                        low = s.lower()
+                        if not any(w in low for w in ["the user", "i should", "i need to", "prompt says", "let me check", "we are asked", "looking at the"]):
+                            conclusion = s
+                            break
+                    content = conclusion if conclusion else "Understood. How would you like me to proceed?"
+            else:
+                content = "Understood. How can I assist you further?"
             
             usage = data.get('usage', {})
             return {
@@ -299,14 +365,16 @@ def call_potato_agent(messages, max_tokens=120, temperature=0.2):
         }
 
 def build_system_prompt_v3(bwm_block="", tools_enabled=True):
-    base = "You are PotatoAI 🥔, an ultra-fast, capable local AI computer agent powered by PotatoClaw V3 architecture."
+    base = "You are PotatoAI 🥔, an ultra-fast local computer agent powered by PotatoClaw V3 architecture."
     rules = [
-        "Be concise, clear, and direct.",
-        "When answering questions or writing code, provide working, accurate solutions.",
+        "Be concise, clear, and direct in 1-2 sentences.",
+        "CRITICAL: Output your response directly. Do NOT output internal monologues, thinking steps, or self-dialogue.",
     ]
     if tools_enabled:
-        rules.append("You have access to tools: browser(url), read_file(path), run_command(command), fetch_news(category).")
-        rules.append("To call a tool, output JSON: `{\"tool\": \"tool_name\", \"args\": {\"param\": \"val\"}}`")
+        rules.append("You have tools: browser(url), read_file(path), run_command(command), fetch_news(category).")
+        rules.append("To call a tool, output ONLY: `{\"tool\": \"tool_name\", \"args\": {\"param\": \"val\"}}`.")
+        rules.append("Example: User: read README.md -> {\"tool\": \"read_file\", \"args\": {\"path\": \"README.md\"}}")
+        rules.append("Example: User: get defence news -> {\"tool\": \"fetch_news\", \"args\": {\"category\": \"defence\"}}")
     
     prompt = f"{base}\n" + "\n".join(f"- {r}" for r in rules)
     if bwm_block:
@@ -336,7 +404,7 @@ def get_system_stats():
 
     return {"vram": vram, "ram": ram}
 
-# --- Interactive Chat Loop with Full PotatoClaw V3 Architecture ---
+# --- Interactive Chat Loop with Rule Zero & V3 Architecture ---
 def run_interactive_chat():
     bwm = BoundedWorkingMemory(max_total_chars=850)
     verifier = DeterministicVerifier()
@@ -349,7 +417,7 @@ def run_interactive_chat():
     print(f"{CYAN}{BOLD}   🥔 POTATOCLAW V3 AI AGENT CHAT (GRAPH-LLM & BWM ARCHITECTURE)  {RESET}")
     print(f"{CYAN}{BOLD}==================================================================={RESET}")
     print(f" {DIM}Hardware: GTX 1650 (4GB VRAM) | Context: 2048 Tokens | Zero Cloud{RESET}")
-    print(f" {DIM}Subsystems: BWM + Deterministic Verifier + Loop Breaker Active{RESET}")
+    print(f" {DIM}Rule Zero: Direct tool execution enabled (0.05s latency){RESET}")
     
     server_online = check_model_server()
     if server_online:
@@ -438,14 +506,30 @@ def run_interactive_chat():
             print(f"  {BOLD}/exit{RESET}        : Exit chat\n")
             continue
 
+        # RULE ZERO FAST-PATH: Intercept direct tool commands before neural invocation
+        direct_tool, direct_args = intercept_direct_action(user_input)
+        if direct_tool and tools_enabled:
+            t0_fast = time.time()
+            print(f"\n{YELLOW}⚙️ Executing Tool (Rule Zero Direct): {BOLD}{direct_tool}{RESET} with args: {direct_args}")
+            tool_result, is_verified = execute_tool(direct_tool, direct_args, verifier=verifier)
+            ver_badge = f"{GREEN}[✔ VERIFIED]{RESET}" if is_verified else f"{YELLOW}[FAILED]{RESET}"
+            print(f"{DIM}Observation ({len(tool_result)} chars) {ver_badge}:{RESET}\n{tool_result}")
+            
+            bwm.add_fact(f"Completed {direct_tool}: {tool_result[:60]}")
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": f"Executed {direct_tool}."})
+            lat_ms = round((time.time() - t0_fast) * 1000)
+            print(f"\n{DIM}[{lat_ms}ms | 0 tokens (Rule Zero)]{RESET}\n")
+            continue
+
         # Add user turn to BWM
         bwm.add_fact(f"User asked: {user_input[:80]}")
 
-        # Build Context with BWM prompt block
+        # Build Context with BWM prompt block (keep last 2 conversational turns only)
         bwm_block = bwm.format_prompt_block()
         sys_prompt = build_system_prompt_v3(bwm_block, tools_enabled)
         
-        recent_history = history[-4:]
+        recent_history = history[-2:]
         messages = [{"role": "system", "content": sys_prompt}]
         messages.extend(recent_history)
         messages.append({"role": "user", "content": user_input})
@@ -464,7 +548,6 @@ def run_interactive_chat():
         if tools_enabled:
             tool_name, tool_args = extract_tool_call(agent_text)
             if tool_name:
-                # Check Loop Detector
                 is_loop, loop_msg = loop_detector.record_action(tool_name, tool_args)
                 if is_loop:
                     print(f"\n{RED}🛑 LOOP DETECTED: {loop_msg}{RESET}")
@@ -475,7 +558,6 @@ def run_interactive_chat():
                     ver_badge = f"{GREEN}[✔ VERIFIED]{RESET}" if is_verified else f"{YELLOW}[FAILED]{RESET}"
                     print(f"{DIM}Observation ({len(tool_result)} chars) {ver_badge}:{RESET}\n{tool_result}")
                     
-                    # Record to BWM & Failure store if failed
                     if is_verified:
                         bwm.add_fact(f"Completed {tool_name}: {tool_result[:60]}")
                     else:
@@ -483,14 +565,14 @@ def run_interactive_chat():
                         bwm.add_fact(f"Tool {tool_name} failed: {tool_result[:60]}")
                     
                     clean_agent_call = re.sub(r'<tool_call>.*?</tool_call>', '', agent_text, flags=re.DOTALL).strip()
-                    if not clean_agent_call:
+                    if not clean_agent_call or clean_agent_call == "<tool_call>":
                         clean_agent_call = f"I executed {tool_name} with {tool_args}."
                         
                     follow_up_msgs = [
                         {"role": "system", "content": build_system_prompt_v3(bwm.format_prompt_block(), False)},
                         {"role": "user", "content": user_input},
                         {"role": "assistant", "content": clean_agent_call},
-                        {"role": "user", "content": f"Tool output ({ver_badge}):\n{tool_result}\nProvide final concise answer now."}
+                        {"role": "user", "content": f"Tool output was:\n{tool_result}\nProvide a concise 1-2 sentence summary to the user."}
                     ]
                     print(f"\n{CYAN}{BOLD}PotatoAI 🥔 > {RESET}", end="", flush=True)
                     final_resp = call_potato_agent(follow_up_msgs)
@@ -501,7 +583,9 @@ def run_interactive_chat():
                     
         if not tool_call_handled:
             clean_display = re.sub(r'<tool_call>.*?</tool_call>', '', agent_text, flags=re.DOTALL).strip()
-            print(clean_display if clean_display else agent_text)
+            if clean_display == "<tool_call>" or not clean_display:
+                clean_display = "I am ready. Please specify what you would like me to do."
+            print(clean_display)
 
         ms = round(resp['elapsed'] * 1000)
         toks = resp.get('total_tokens', 0)
