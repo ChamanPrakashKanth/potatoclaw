@@ -1,0 +1,13 @@
+{
+  "model": "spark-x2.5-4b:latest",
+  "checked_at": "2026-09-04T06:09:21Z",
+  "enabled": ["select-lines", "classify-request"],
+  "cases": [
+    {"capability": "classify-request", "case": "coding", "passed": true},
+    {"capability": "classify-request", "case": "documentation", "passed": true},
+    {"capability": "classify-request", "case": "other", "passed": true},
+    {"capability": "select-lines", "case": "GPU memory", "passed": true},
+    {"capability": "select-lines", "case": "server port", "passed": true},
+    {"capability": "select-lines", "case": "billing prices", "passed": true}
+  ]
+}

@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import json
+import re
 import urllib.request
 import urllib.parse
 import subprocess
@@ -20,6 +21,7 @@ from potato_bwm import BoundedWorkingMemory, HierarchicalMemory
 from potato_compiler import ObservationCompiler, ContextCompiler, CompactObservation
 from potato_verifier import DeterministicVerifier, VerificationResult
 from potato_failure_memory import FailureMemoryStore, LoopDetector, DynamicToolRouter
+from potato_chat import intercept_direct_action, extract_tool_call, normalize_tool_call, execute_tool
 
 SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
 DEFAULT_MODEL = "spark-x2.5-4b:latest"
@@ -84,6 +86,13 @@ class PotatoAgent:
         max_tokens: int = 150,
         temperature: float = 0.1,
     ) -> Dict[str, Any]:
+        # Conservative UTF-8 byte bound, with room for the chat template and reply.
+        prompt_bound = sum(len(m.get("content", "").encode("utf-8")) + 96 for m in messages)
+        if tools:
+            prompt_bound += len(json.dumps(tools, ensure_ascii=False).encode("utf-8"))
+        if not 1 <= max_tokens <= 512 or prompt_bound + max_tokens + 256 > 2048:
+            return {"error": "Context budget exceeds the 2048-token safety limit; shorten the request.",
+                    "content": "", "tool_calls": [], "latency": 0}
         self.metrics["model_calls"] += 1
         self.metrics["call_categories"][category] = self.metrics["call_categories"].get(category, 0) + 1
 
@@ -115,7 +124,12 @@ class PotatoAgent:
                 self.metrics["total_tokens"] += (prompt_tok + comp_tok)
 
                 msg = data["choices"][0]["message"]
-                content = msg.get("content") or msg.get("reasoning_content") or ""
+                content = msg.get("content") or ""
+                content = re.sub(r'<think>.*?(?:</think>|$)', '', content, flags=re.DOTALL | re.IGNORECASE)
+                if not content and msg.get("reasoning_content"):
+                    tool, args = extract_tool_call(msg["reasoning_content"])
+                    if tool:
+                        content = json.dumps({"tool": tool, "args": args})
                 return {
                     "content": content.strip(),
                     "tool_calls": msg.get("tool_calls", []),
@@ -129,6 +143,7 @@ class PotatoAgent:
             char_count = sum(len(m.get("content", "")) for m in messages)
             est_tokens = char_count // 4
             return {
+                "error": str(e),
                 "content": f"[Error/Fallback: {e}]",
                 "tool_calls": [],
                 "prompt_tokens": est_tokens,
@@ -145,6 +160,11 @@ class PotatoAgent:
         Rule Zero: Uses algorithmic templates where task patterns are well-known,
         or prompts the model once to generate structured JSON if novel.
         """
+        direct_tool, _ = intercept_direct_action(self.goal)
+        if direct_tool:
+            family = {"read_file": "filesystem", "run_command": "terminal", "browser": "browser", "fetch_news": "search"}[direct_tool]
+            self.graph.add_node(TaskNode("execute_goal", self.goal, tool_family=family))
+            return
         g_lower = self.goal.lower()
 
         # 1. Deterministic plan generation for common computer agent tasks
@@ -187,6 +207,7 @@ class PotatoAgent:
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if match:
                 items = json.loads(match.group(0))
+                planned_graph = TaskGraph(self.goal, self.critical_constraints)
                 for idx, item in enumerate(items):
                     node = TaskNode(
                         node_id=item.get("id", f"node_{idx+1}"),
@@ -195,13 +216,14 @@ class PotatoAgent:
                         tool_family=item.get("tool_family", ToolFamily.NONE.value),
                         priority=len(items) - idx,
                     )
-                    self.graph.add_node(node)
+                    planned_graph.add_node(node)
+                self.graph = planned_graph
                 return
         except Exception:
             pass
 
         # Robust single-node fallback
-        fallback = TaskNode("execute_goal", f"Fulfill goal: {self.goal}", tool_family=ToolFamily.NONE.value)
+        fallback = TaskNode("execute_goal", f"Fulfill goal: {self.goal}", tool_family="core")
         self.graph.add_node(fallback)
 
     # ------------------------------------------------------------
@@ -210,14 +232,21 @@ class PotatoAgent:
     def execute_node(self, node: TaskNode) -> bool:
         node.status = NodeStatus.RUNNING
         node.start_time = time.time()
-
-        # Check failure memory before proceeding
-        is_known, fail_sig = self.failure_store.is_known_failure(node.id, node.description)
-        if is_known and fail_sig:
-            # Replan or adapt immediately without blindly repeating
+        node.error = None
+        try:
+            return self._execute_node(node)
+        except Exception as exc:
             node.status = NodeStatus.FAILED
-            node.error = f"Blocked by Failure Memory: {fail_sig.error_msg}"
+            node.error = str(exc)
             return False
+        finally:
+            node.end_time = time.time()
+            self.save_checkpoint()
+
+    def _execute_node(self, node: TaskNode) -> bool:
+        tool_name, args_payload = intercept_direct_action(node.description)
+        if tool_name:
+            return self._execute_action(node, tool_name, args_payload)
 
         # Adaptive Reasoning Budgeting (Phase 12)
         if node.tool_family == ToolFamily.NONE.value:
@@ -233,7 +262,7 @@ class PotatoAgent:
         fail_block = self.failure_store.format_failure_prompt_block(node.id)
         
         messages, stats = self.context_compiler.compile_context(
-            system_prompt="You are PotatoClaw, a deterministic autonomous computer agent for local models.",
+            system_prompt='You are PotatoClaw. Perform one step. For tools output {"tool":"name","args":{...}}. Never claim an action happened without tool evidence.',
             goal=self.goal,
             current_node_desc=node.description,
             success_condition=node.success_condition,
@@ -241,35 +270,82 @@ class PotatoAgent:
             local_graph_block=local_block,
             bwm_block=bwm_block,
             failure_block=fail_block,
+            observation_block="\n".join((parent.result or "")[:400] for parent in self.graph.get_parents(node.id)),
         )
 
         # Dynamic Tool Router (Phase 10)
-        tools = DynamicToolRouter.get_schemas_for_family(node.tool_family)
+        tools = [] if node.tool_family == "none" else [
+            schema for schema in DynamicToolRouter.get_schemas_for_family(node.tool_family)
+            if schema["function"]["name"] in {"read", "exec", "browser"}
+        ]
 
         # Execute Model Turn
         res = self.call_model(messages, category="EXECUTION", tools=tools, max_tokens=max_tokens)
-        self.metrics["tool_calls"] += 1
+        if res.get("error"):
+            raise ValueError(res["error"])
+        calls = res.get("tool_calls") or []
+        if calls:
+            if len(calls) != 1 or not isinstance(calls[0], dict):
+                raise ValueError("Expected exactly one tool action per node; nothing executed.")
+            function = calls[0].get("function", {})
+            tool_name, args_payload = normalize_tool_call(function.get("name"), function.get("arguments", {}))
+        else:
+            tool_name, args_payload = extract_tool_call(res.get("content", ""))
+        if tool_name:
+            return self._execute_action(node, tool_name, args_payload)
+        # Text alone is not evidence that a tool task completed.
+        if node.tool_family != "none" or not res.get("content") or res["content"].startswith("[Error/"):
+            raise ValueError("No executable tool action returned; task not verified.")
+        if node.success_condition:
+            raise ValueError("No deterministic verifier for this success condition.")
+        node.result = re.sub(r'<think>.*?(?:</think>|$)', '', res["content"], flags=re.DOTALL | re.IGNORECASE).strip()[:400]
+        if not node.result:
+            raise ValueError("No final answer returned.")
+        node.status = NodeStatus.COMPLETE
+        self.memory.promote_to_l1(f"Response {node.id}: {node.result[:80]}", current_node_id=node.id)
+        return True
+
+    def _execute_action(self, node: TaskNode, tool_name: str, args_payload: Dict[str, Any]) -> bool:
+        aliases = {"read": "read_file", "view_file": "read_file", "cat": "read_file",
+                   "exec": "run_command", "shell": "run_command", "news": "fetch_news"}
+        tool_name = aliases.get(tool_name, tool_name)
+        required = {"read_file": "path", "run_command": "command", "browser": "url", "fetch_news": "category"}
+        if tool_name not in required:
+            raise ValueError(f"Unsupported tool: {tool_name}")
+        key = required[tool_name]
+        if not isinstance(args_payload.get(key), str) or not args_payload[key].strip():
+            raise ValueError(f"Tool {tool_name} requires a nonempty string '{key}'.")
+        if tool_name == "browser" and args_payload.get("action", "open") not in ("open", "navigate"):
+            raise ValueError("Browser supports HTTP page reading only, not clicks or typing.")
+        if node.success_condition:
+            raise ValueError("No deterministic verifier for this success condition; action not executed.")
+        action = json.dumps({"tool": tool_name, "args": args_payload}, sort_keys=True)
+        known, failure = self.failure_store.is_known_failure(node.id, action)
+        if known:
+            raise ValueError(f"Blocked repeated failed action: {failure.error_msg}")
 
         # Check Loop Detector (Phase 9)
-        tool_name = tools[0]["function"]["name"] if tools else "reason"
-        args_payload = {"description": node.description}
         is_loop, loop_msg = self.loop_detector.record_action(tool_name, args_payload, node_id=node.id)
         if is_loop:
             self.metrics["loop_interventions"] += 1
             node.status = NodeStatus.FAILED
             node.error = loop_msg
-            self.failure_store.record_failure(node.id, node.description, loop_msg, diagnosis="Loop circuit breaker")
+            self.failure_store.record_failure(node.id, action, loop_msg, diagnosis="Loop circuit breaker")
             return False
 
         # Deterministic Verification (Phase 7)
-        node.result = res["content"] or "Execution completed successfully"
+        self.metrics["tool_calls"] += 1
+        observation, verified = execute_tool(tool_name, args_payload, verifier=self.verifier)
+        self.metrics["deterministic_verifications"] += 1
+        node.result = observation[:600]
+        if not verified:
+            self.failure_store.record_failure(node.id, action, node.result)
+            raise ValueError(node.result)
         node.status = NodeStatus.COMPLETE
         node.end_time = time.time()
-        self.metrics["deterministic_verifications"] += 1
 
         # Promote findings to BWM
         self.memory.promote_to_l1(f"Completed {node.id}: {node.result[:80]}", current_node_id=node.id)
-        self.save_checkpoint()
         return True
 
     # ------------------------------------------------------------
@@ -278,6 +354,17 @@ class PotatoAgent:
     def run(self, max_turns: int = 15) -> Dict[str, Any]:
         if not self.graph.nodes:
             self.plan_from_goal()
+
+        # Validate the whole DAG before any independent node can cause side effects.
+        remaining = set(self.graph.nodes)
+        resolved = set()
+        while remaining:
+            ready = {key for key in remaining if set(self.graph.nodes[key].dependencies) <= resolved}
+            if not ready:
+                return {"success": False, "error": "Invalid graph: cyclic or missing dependencies.",
+                        "tool_calls": self.metrics["tool_calls"], "model_calls": self.metrics["model_calls"]}
+            remaining -= ready
+            resolved |= ready
 
         turn = 0
         while turn < max_turns and not self.graph.is_finished():
@@ -297,6 +384,7 @@ class PotatoAgent:
         self.metrics["end_time"] = time.time()
         self.metrics["wall_clock_sec"] = round(self.metrics["end_time"] - self.metrics["start_time"], 3)
         self.metrics["success"] = self.graph.is_successful()
+        self.save_checkpoint()
 
         return {
             "success": self.metrics["success"],
@@ -311,6 +399,8 @@ class PotatoAgent:
             "wall_clock_sec": self.metrics["wall_clock_sec"],
             "completed_nodes": [n.id for n in self.graph.nodes.values() if n.status == NodeStatus.COMPLETE],
             "failed_nodes": [n.id for n in self.graph.nodes.values() if n.status == NodeStatus.FAILED],
+            "results": {n.id: n.result for n in self.graph.nodes.values() if n.status == NodeStatus.COMPLETE},
+            "errors": {n.id: n.error for n in self.graph.nodes.values() if n.error},
         }
 
     # ------------------------------------------------------------
@@ -322,6 +412,11 @@ class PotatoAgent:
             "critical_constraints": self.critical_constraints,
             "graph": self.graph.to_dict(),
             "bwm": self.memory.l1_bwm.to_dict(),
+            "model_url": self.model_url,
+            "model_name": self.model_name,
+            "context_budget_chars": self.context_compiler.max_context_chars,
+            "failures": [record.to_dict() for record in self.failure_store.records.values()],
+            "loop_history": self.loop_detector.history,
             "metrics": self.metrics,
             "timestamp": time.time(),
         }
@@ -338,10 +433,37 @@ class PotatoAgent:
         try:
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            agent = cls(goal=data["goal"], critical_constraints=data.get("critical_constraints", []))
+            agent = cls(goal=data["goal"], critical_constraints=data.get("critical_constraints", []),
+                        checkpoint_path=checkpoint_path, model_url=data.get("model_url", SPARK_API_URL),
+                        model_name=data.get("model_name", DEFAULT_MODEL),
+                        context_budget_chars=data.get("context_budget_chars", 3200))
             agent.graph = TaskGraph.from_dict(data["graph"])
             agent.memory.l1_bwm = BoundedWorkingMemory.from_dict(data["bwm"])
             agent.metrics = data.get("metrics", agent.metrics)
+            for record in data.get("failures", []):
+                agent.failure_store.record_failure(record["node_id"], record["action"], record["error_msg"])
+            agent.loop_detector.history = data.get("loop_history", [])[-30:]
             return agent
         except Exception:
             return None
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run bounded PotatoClaw tasks against the local model and real tools.")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--goal", help="Requested task; explicit read/run/browser commands bypass the model")
+    source.add_argument("--resume", action="store_true", help="Resume the specified checkpoint")
+    parser.add_argument("--checkpoint", default="potato_checkpoint.json")
+    parser.add_argument("--max-turns", type=int, default=15)
+    options = parser.parse_args()
+    if options.max_turns < 1:
+        parser.error("--max-turns must be positive")
+    agent = PotatoAgent.load_checkpoint(options.checkpoint) if options.resume else PotatoAgent(
+        options.goal, checkpoint_path=options.checkpoint)
+    if agent is None:
+        parser.error("Checkpoint could not be loaded")
+    result = agent.run(max_turns=options.max_turns)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    sys.exit(0 if result["success"] else 1)

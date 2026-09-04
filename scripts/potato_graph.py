@@ -189,7 +189,7 @@ class TaskGraph:
         # True if at least one complete and none failed without alternative
         has_complete = any(n.status == NodeStatus.COMPLETE for n in self.nodes.values())
         has_failed = any(n.status == NodeStatus.FAILED for n in self.nodes.values())
-        return has_complete and not has_failed
+        return self.is_finished() and has_complete and not has_failed
 
     # ------------------------------------------------------------
     # Local Graph Retrieval: G_local(v)

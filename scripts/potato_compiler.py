@@ -189,7 +189,10 @@ class ContextCompiler:
             sections.append(("graph", 6, local_graph_block.strip()))
 
         # Enforce budget starting from lowest priority
-        total_len = sum(len(content) for _, _, content in sections)
+        suffix = "\n\nExecute the current task now. If a tool is required, call it. Otherwise reply concisely."
+        def rendered_size():
+            return sum(len(content) for _, _, content in sections) + max(0, len(sections) - 2) * 2 + len(suffix)
+        total_len = rendered_size()
         pruned_sections = []
         if total_len > self.max_context_chars:
             # Sort by priority descending (highest priority number gets pruned first)
@@ -198,17 +201,19 @@ class ContextCompiler:
                 if sections[0][1] <= 2:
                     break # Never prune system or core goal
                 dropped = sections.pop(0)
-                total_len -= len(dropped[2])
+                total_len = rendered_size()
                 pruned_sections.append(dropped[0])
             # Re-sort by priority ascending
             sections.sort(key=lambda x: x[1])
+        if total_len > self.max_context_chars:
+            raise ValueError("Context budget exceeded by required goal or constraints; shorten the request.")
 
         # Construct OpenAI message format
         messages = [
             {"role": "system", "content": sys_content}
         ]
         user_body = "\n\n".join(content for sec_name, _, content in sections if sec_name != "system")
-        user_body += "\n\nExecute the current task now. If a tool is required, call it. Otherwise reply concisely."
+        user_body += suffix
         messages.append({"role": "user", "content": user_body})
 
         stats = {

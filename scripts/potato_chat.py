@@ -15,6 +15,7 @@ import os
 import io
 import time
 import json
+import ast
 import re
 import urllib.request
 import urllib.parse
@@ -48,7 +49,6 @@ from potato_bwm import BoundedWorkingMemory, HierarchicalMemory
 from potato_compiler import ObservationCompiler, ContextCompiler
 from potato_verifier import DeterministicVerifier
 from potato_failure_memory import FailureMemoryStore, LoopDetector, DynamicToolRouter
-from potato_agent import PotatoAgent
 
 try:
     from fresh_start import purge_all_caches, reset_llama_server_kv_cache
@@ -83,38 +83,14 @@ def intercept_direct_action(user_input):
     """
     clean = user_input.strip().lower()
 
-    # 1. Natural News Queries
-    is_news = any(k in clean for k in ["news", "headline", "headlines", "story", "stories", "feed", "article", "update", "updates", "intel"])
-    is_defence = any(k in clean for k in ["defence", "defense", "military", "drdo", "army", "navy", "airforce", "iaf", "missile", "radar", "weapon", "war"])
-    is_india = any(k in clean for k in ["india", "indian", "idrw", "delhi", "bharat"])
-    is_tech = any(k in clean for k in ["tech", "technology", "ai", "artificial intelligence", "software", "gpu", "chip", "semiconductor"])
-    is_physics = any(k in clean for k in ["physics", "quantum", "cern", "space", "astronomy", "cosmos", "particle"])
-
-    # High-priority compound match: Indian Defence
-    if (is_india and is_defence) or "indian defence" in clean or "indian defense" in clean:
-        return "fetch_news", {"category": "indian_defence"}
-
-    if is_defence and (is_news or clean.startswith("fetch") or clean.startswith("get") or clean.startswith("show") or clean.startswith("give") or clean.startswith("i want")):
-        return "fetch_news", {"category": "indian_defence" if is_india else "defence"}
-
-    if is_tech and (is_news or clean.startswith("fetch") or clean.startswith("get") or clean.startswith("show") or clean.startswith("give") or clean.startswith("i want")):
-        return "fetch_news", {"category": "tech"}
-
-    if is_physics and (is_news or clean.startswith("fetch") or clean.startswith("get") or clean.startswith("show") or clean.startswith("give") or clean.startswith("i want")):
-        return "fetch_news", {"category": "physics"}
-
-    if is_news or clean in ["news", "latest news", "breaking news", "fetch_news"]:
-        return "fetch_news", {"category": "tech"}
-
-    if clean in ["tech", "defence", "defense", "physics", "science"]:
-        cat = "defence" if clean in ["defence", "defense"] else "physics" if clean == "science" else clean
-        return "fetch_news", {"category": cat}
-
-    # 2. File inspection
+    # Explicit commands own their arguments, even when a path contains "news".
     if clean.startswith("read_file ") or clean.startswith("read ") or clean.startswith("cat ") or clean.startswith("view "):
         parts = user_input.strip().split(maxsplit=1)
         if len(parts) > 1:
-            return "read_file", {"path": parts[1].strip()}
+            path = parts[1].strip()
+            if len(path) >= 2 and path[0] == path[-1] and path[0] in "\"'":
+                path = path[1:-1]
+            return "read_file", {"path": path}
 
     # 3. Terminal execution
     if clean.startswith("run_command ") or clean.startswith("run ") or clean.startswith("exec ") or clean.startswith("shell "):
@@ -128,10 +104,24 @@ def intercept_direct_action(user_input):
         if len(parts) > 1:
             return "browser", {"url": parts[1].strip()}
 
+    # Match whole words, not fragments like "ai" in "chair" or "war" in "software".
+    words = set(re.findall(r"\w+", clean))
+    is_news = bool(words & {"news", "headline", "headlines", "fetch_news"})
+    categories = {"tech", "defence", "defense", "physics", "science", "indian_defence"}
+    if is_news or clean in categories:
+        if words & {"defence", "defense", "military", "drdo", "army", "navy", "iaf", "missile", "radar", "weapon", "war", "indian_defence"}:
+            category = "indian_defence" if words & {"india", "indian", "bharat", "indian_defence"} else "defence"
+        elif words & {"physics", "science", "quantum", "cern", "space", "astronomy", "cosmos", "particle"}:
+            category = "physics"
+        else:
+            category = "tech"
+        return "fetch_news", {"category": category}
     return None, {}
 
 # --- Small Model Tool Repair & Universal Parser ---
 def repair_tool_json(raw_text):
+    if not isinstance(raw_text, str):
+        return None
     text = raw_text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
@@ -141,24 +131,35 @@ def repair_tool_json(raw_text):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
     
-    text = text.replace("'", '"')
-    text = re.sub(r',\s*([}\]])', r'\1', text)
-    text = re.sub(r'([{,]\s*)([a-zA-Z0-9_$]+)\s*:', r'\1"\2":', text)
-    try:
-        return json.loads(text)
-    except Exception:
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
+    candidates = [text]
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match and match.group(0) != text:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        # Valid JSON must be tried before repair so shell quoting stays intact.
+        try:
+            return json.loads(candidate)
+        except (ValueError, RecursionError):
+            pass
+        # Repair syntax only outside quoted strings. Never evaluate model code.
+        tokens = re.split(r'''("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')''', candidate)
+        for index in range(0, len(tokens), 2):
+            tokens[index] = re.sub(r'([{,]\s*)([a-zA-Z0-9_$]+)\s*:', r'\1"\2":', tokens[index])
+            tokens[index] = re.sub(r',\s*([}\]])', r'\1', tokens[index])
+        candidate = "".join(tokens)
+        for parser in (json.loads, ast.literal_eval):
             try:
-                sub = match.group(0).replace("'", '"')
-                sub = re.sub(r',\s*([}\]])', r'\1', sub)
-                sub = re.sub(r'([{,]\s*)([a-zA-Z0-9_$]+)\s*:', r'\1"\2":', sub)
-                return json.loads(sub)
-            except Exception:
+                return parser(candidate)
+            except (ValueError, SyntaxError, RecursionError):
                 pass
     return None
 
 def normalize_tool_call(tool_name, args):
+    if isinstance(args, str):
+        args = repair_tool_json(args)
+    if not isinstance(tool_name, str) or not isinstance(args, dict):
+        return None, {}
+    args = dict(args)
     tool = str(tool_name).lower().strip()
     if tool in ["chrome_tabs", "browser_tabs", "tabs", "list_tabs"] and any(k in args for k in ["url", "target", "link", "site", "web"]):
         tool = "browser"
@@ -241,14 +242,14 @@ def execute_tool(tool_name, args, verifier=None):
         if not path:
             return "Error: Missing 'path' argument.", False
         target_path = os.path.abspath(os.path.join(ROOT_DIR, path)) if not os.path.isabs(path) else path
-        v_res = verifier.verify_file_exists(target_path, min_bytes=1)
+        v_res = verifier.verify_file_exists(target_path, min_bytes=0)
         if not v_res.passed:
             return f"Error: File '{path}' does not exist.", False
         try:
             with open(target_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read(2000)
-            comp = ObservationCompiler.compile_filesystem(target_path, exists=True, is_file=True, size_bytes=len(content), preview=content[:300])
-            return comp.summary, True
+            comp = ObservationCompiler.compile_filesystem(target_path, content)
+            return comp.format_block(), True
         except Exception as e:
             return f"Error reading file: {e}", False
 
@@ -264,7 +265,7 @@ def execute_tool(tool_name, args, verifier=None):
             )
             v_res = verifier.verify_exit_code(res.returncode, expected=0)
             comp = ObservationCompiler.compile_terminal(cmd, res.returncode, res.stdout, res.stderr)
-            return comp.summary, v_res.passed
+            return comp.format_block(), v_res.passed
         except Exception as e:
             return f"Error running command: {e}", False
 
@@ -274,11 +275,13 @@ def execute_tool(tool_name, args, verifier=None):
             return "Error: Missing 'url' argument.", False
         if not url.startswith("http://") and not url.startswith("https://"):
             url = f"https://{url}"
-        v_url = verifier.verify_browser_url(url)
         try:
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                return "Error: Expected an HTTP(S) URL with a hostname.", False
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PotatoClaw/3.0"})
             with urllib.request.urlopen(req, timeout=6) as resp:
-                html = resp.read().decode('utf-8', errors='ignore')
+                html = resp.read(262144).decode('utf-8', errors='ignore')
                 title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
                 title = title_match.group(1).strip() if title_match else url
                 text = re.sub(r'<[^>]+>', ' ', html)
@@ -287,7 +290,7 @@ def execute_tool(tool_name, args, verifier=None):
                 return comp.summary, True
         except Exception as e:
             comp = ObservationCompiler.compile_browser(url, url, f"Could not fetch full body: {e}")
-            return comp.summary, v_url.passed
+            return comp.summary, False
 
     elif tool_name in ["fetch_news", "news"]:
         cat = args.get("category") or "tech"
@@ -336,7 +339,8 @@ def call_potato_agent(messages, max_tokens=250, temperature=0.1):
             raw_content = (msg.get('content') or '').strip()
             reasoning = (msg.get('reasoning_content') or '').strip()
             
-            # Clean think tags if model enclosed them in content
+            # Drop complete and truncated thought blocks, never display reasoning.
+            raw_content = re.sub(r'<think>.*?(?:</think>|$)', '', raw_content, flags=re.DOTALL | re.IGNORECASE).strip()
             if "</think>" in raw_content:
                 raw_content = raw_content.split("</think>")[-1].strip()
                 
@@ -349,21 +353,7 @@ def call_potato_agent(messages, max_tokens=250, temperature=0.1):
                 if t_name:
                     content = json.dumps({"tool": t_name, "args": t_args})
                 else:
-                    # Comprehensive blacklist for internal meta-reasoning
-                    meta_patterns = [
-                        "the user", "user asked", "user says", "previous assistant", "output json",
-                        "tool_call", "let's use", "let me", "i should", "i need", "i will use",
-                        "prompt says", "we are asked", "looking at", "is a bit odd", "it seems",
-                        "context provided", "wait,", "ah,", "supposed to", "as potatoai"
-                    ]
-                    sentences = [s.strip() for s in re.split(r'[.!?\n]\s*', reasoning) if s.strip()]
-                    conclusion = ""
-                    for s in reversed(sentences):
-                        low = s.lower()
-                        if not any(w in low for w in meta_patterns) and len(s) > 10:
-                            conclusion = s
-                            break
-                    content = conclusion if conclusion else "I am ready. What would you like to know or execute?"
+                    content = "The model did not finish an answer. Please try a shorter request."
             else:
                 content = "Understood. How can I assist you further?"
             
