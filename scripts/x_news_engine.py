@@ -17,6 +17,7 @@ import time
 import subprocess
 import webbrowser
 import re
+import unicodedata
 from datetime import datetime
 
 try:
@@ -92,7 +93,7 @@ def is_spam(title, desc):
 def fetch_category_news(category, max_items=5):
     sources = FEEDS.get(category.lower(), [])
     all_articles = []
-    
+
     for source_name, url in sources:
         try:
             req = urllib.request.Request(url, headers={
@@ -105,14 +106,14 @@ def fetch_category_news(category, max_items=5):
                     title_elem = item.find('title')
                     link_elem = item.find('link')
                     desc_elem = item.find('description')
-                    
+
                     title = clean_html_tags(title_elem.text) if title_elem is not None and title_elem.text else ""
                     link = link_elem.text.strip() if link_elem is not None and link_elem.text else ""
                     desc = clean_html_tags(desc_elem.text)[:250] if desc_elem is not None and desc_elem.text else ""
-                    
+
                     if not title or len(title) < 15 or is_spam(title, desc):
                         continue
-                        
+
                     if not any(a['title'].lower() == title.lower() for a in all_articles):
                         all_articles.append({
                             "source": source_name,
@@ -124,8 +125,116 @@ def fetch_category_news(category, max_items=5):
                             break
         except Exception:
             pass
-            
+
     return all_articles[:max_items]
+
+META_REASONING_PATTERNS = [
+    r'\bwe are asked\b',
+    r'\bthe constraints?\b',
+    r'\bstrict twitter limit\b',
+    r'\bcharacter limit\b',
+    r'\btwitter limit\b',
+    r'\bunder \d+ characters\b',
+    r'\brules?:\b',
+    r'\bgoal:\b',
+    r'\bheadline:\b',
+    r'\bcategory:\b',
+    r'\bsource:\b',
+    r'\bkey intel:\b',
+    r'\btask state\b',
+    r'\bhere is (the|a) (viral )?tweet\b',
+    r'\bhere\'s (the|a) (viral )?tweet\b',
+    r'\b(tweet|post) text:\b',
+    r'\bi will (write|create)\b',
+    r'\blet\'s (write|create)\b',
+    r'\bthinking process\b',
+    r'\bdraft:\b',
+    r'\bconstraint:\b',
+]
+
+def x_character_count(text):
+    """Conservative X weight for explicit URLs and Unicode (complex emoji overcount)."""
+    text = unicodedata.normalize('NFC', text)
+    text = re.sub(r'https?://\S+', 'x' * 23, text)
+    return sum(1 if ord(c) <= 0x10ff or 0x2000 <= ord(c) <= 0x200d
+               or 0x2010 <= ord(c) <= 0x201f or 0x2032 <= ord(c) <= 0x2037
+               else 2 for c in text)
+
+
+def clean_x_tweet_output(raw_text, category, link=""):
+    """
+    Deterministically cleans, verifies, and formats LLM output for X (Twitter).
+    Suppresses CoT thinking, removes meta-deliberation and prompt leakage,
+    and enforces the strict 280-character limit with t.co URL weighting.
+    """
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        return None
+
+    text = raw_text.strip()
+
+    # Strip <think>...</think> blocks
+    text = re.sub(r'<think>.*?(?:</think>|$)', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+    if "</think>" in text:
+        text = text.split("</think>")[-1].strip()
+
+    # Strip Markdown fences and quotes
+    text = re.sub(r'^```[a-zA-Z]*\n?', '', text)
+    text = re.sub(r'\n?```$', '', text).strip()
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1].strip()
+
+    # Process line by line to remove meta-reasoning, bulleted constraints, or preambles
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    cleaned_lines = []
+
+    for line in lines:
+        lower_line = line.lower()
+        # Skip lines matching meta-reasoning / constraint patterns
+        if any(re.search(pat, lower_line) for pat in META_REASONING_PATTERNS):
+            continue
+        # Skip bullet points that look like prompt rules
+        if re.match(r'^(?:[-*•]|\d+\.)\s*(?:strict|limit|under|start|state|end|output|rule|constraint)', lower_line):
+            continue
+        cleaned_lines.append(line)
+
+    if not cleaned_lines:
+        return None
+
+    content = " ".join(cleaned_lines).strip()
+    content = re.sub(r'https?://\S+|(?<!\w)#\w+', '', content)
+    content = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0f\u200d]', '', content)
+    content = re.sub(r'\s+', ' ', content).strip()
+
+    # If content still contains blatant prompt constraints / meta-talk, reject
+    if any(re.search(pat, content.lower()) for pat in META_REASONING_PATTERNS):
+        return None
+
+    # Must have minimum substance
+    if len(content) < 15:
+        return None
+
+    # Normalize whitespace
+    content = re.sub(r'\s+', ' ', content).strip()
+
+    link = link.strip() if link else ""
+    link_section = f"\n\n{link}" if link else ""
+    if x_character_count(content + link_section) <= X_FREE_CHAR_LIMIT:
+        return content + link_section
+
+    # Prefer a complete sentence to a clipped second sentence.
+    sentences = re.split(r'(?<=[.!?])\s+', content)
+    while len(sentences) > 1:
+        sentences.pop()
+        candidate = ' '.join(sentences) + link_section
+        if x_character_count(candidate) <= X_FREE_CHAR_LIMIT:
+            return candidate
+    trimmed = content
+    while trimmed and x_character_count(trimmed + '...' + link_section) > X_FREE_CHAR_LIMIT:
+        trimmed = trimmed[:-1].rstrip()
+    if ' ' in trimmed:
+        trimmed = trimmed.rsplit(' ', 1)[0]
+    return trimmed + '...' + link_section if trimmed else None
+
 
 def generate_single_story_x_post(category, article):
     """
@@ -133,123 +242,65 @@ def generate_single_story_x_post(category, article):
     using PotatoClaw V3 Bounded Working Memory and Deterministic Verifier.
     """
     link = article.get('link', '').strip()
-    link_section = f"\n\n🔗 {link}" if link else ""
-    
-    # PotatoClaw V3: Bounded Working Memory with Protected Constraints
+
+    # PotatoClaw V3: Bounded Working Memory with Facts Only (no prompt constraint pollution)
     if BoundedWorkingMemory is not None:
-        bwm = BoundedWorkingMemory(max_total_chars=600)
-        bwm.add_protected_fact(f"Constraint: Strict Twitter limit <= {X_FREE_CHAR_LIMIT} characters.")
+        bwm = BoundedWorkingMemory(max_total_chars=500)
         bwm.add_protected_fact(f"Category: {category.upper()}")
-        bwm.add_protected_fact("Rule: Start with emoji hook (🚀 / 🛡️ / ⚛️). End with 2 hashtags.")
         bwm.add_fact(f"Headline: {article['title']}")
         bwm.add_fact(f"Source: {article['source']}")
-        bwm.add_fact(f"Key Intel: {article['desc'][:140]}")
+        if article.get('desc'):
+            bwm.add_fact(f"Intel: {article['desc'][:120]}")
         bwm_block = bwm.format_prompt_block()
     else:
-        bwm_block = f"[TASK STATE (BMW)]\nGOAL: Post single story for {category.upper()}\nHEADLINE: {article['title']}\nFACTS: {article['desc'][:160]}"
+        bwm_block = f"HEADLINE: {article['title']}\nSOURCE: {article['source']}"
 
     prompt = f"""{bwm_block}
-GOAL: Create ONE viral X (Twitter) post for this single story.
-CATEGORY: {category.upper()}
-HEADLINE: {article['title']}
 
-RULES:
-1. Under 210 characters text (plus link).
-2. Start with an emoji hook (🚀 / 🛡️ / ⚛️).
-3. State what happened and why it matters in 1-2 punchy sentences.
-4. End with 2 hashtags e.g. #{category.capitalize()} #Innovation.
-5. Output ONLY the tweet text. No markdown fences."""
+Write one factual X news post in 1-2 short sentences, at most 250 characters.
+Start with the organisation or subject and what happened. Then explain its
+purpose or significance only if supported by the supplied facts.
+Preserve status: a tender or proposal is not a launch or proven capability.
+Use neutral, clear prose. No hype, emojis, hashtags, headings, or calls to action.
+Do not invent details. Do not include links. Output only the post text."""
 
     try:
         payload = {
             "model": MODEL_ID,
             "messages": [
-                {"role": "system", "content": "You are PotatoClaw V3 X-Engine. Output ONLY the viral tweet text directly. Do not think out loud or explain. No preambles."},
+                {
+                    "role": "system",
+                    "content": "You are PotatoClaw V3 X-Engine. Output ONLY the tweet text directly. Never output preambles, thinking steps, constraints, or meta-commentary."
+                },
                 {"role": "user", "content": prompt}
             ],
-            "max_tokens": 100,
+            "max_tokens": 120,
             "temperature": 0.2
         }
-        
+
         req = urllib.request.Request(
             SPARK_API_URL,
             data=json.dumps(payload).encode('utf-8'),
             headers={"Content-Type": "application/json"}
         )
-        
+
         with urllib.request.urlopen(req, timeout=25) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             msg = data['choices'][0]['message']
-            content = (msg.get('content') or msg.get('reasoning_content') or '').strip()
-            
-            # Remove any thinking block if present
-            if "</think>" in content:
-                content = content.split("</think>")[-1].strip()
-            content = content.replace("```json", "").replace("```", "").strip().strip('"')
-            
-            # Clean common preambles
-            for preamble in ["tweet text:", "here is the tweet:", "post text:"]:
-                if preamble in content.lower():
-                    idx = content.lower().find(preamble)
-                    content = content[idx + len(preamble):].strip()
-            
-            if content:
-                # Append link if not already present
-                if link and link not in content:
-                    full_post = f"{content}{link_section}"
-                else:
-                    full_post = content
-                    
-                # PotatoClaw V3 Deterministic Verification of Twitter character limit
-                effective_len = len(re.sub(r'https?://\S+', 'X'*23, full_post))
-                if effective_len <= X_FREE_CHAR_LIMIT:
-                    return full_post
-                else:
-                    # Deterministically trim excess without breaking words
-                    overshoot = effective_len - X_FREE_CHAR_LIMIT
-                    trimmed_content = content[:-overshoot - 5].rsplit(' ', 1)[0] + "..."
-                    candidate = f"{trimmed_content}{link_section}"
-                    if len(re.sub(r'https?://\S+', 'X'*23, candidate)) <= X_FREE_CHAR_LIMIT:
-                        return candidate
+            content = (msg.get('content') or '').strip()
+
+            cleaned_post = clean_x_tweet_output(content, category, link)
+            if cleaned_post:
+                return cleaned_post
     except Exception:
         pass
-        
+
     return format_fallback_single_post(category, article)
 
 def format_fallback_single_post(category, article):
-    emojis = {
-        "tech": "🚀 TECH BREAKTHROUGH",
-        "defence": "🛡️ DEFENCE RADAR",
-        "physics": "⚛️ QUANTUM / PHYSICS",
-        "all": "⚡ BREAKING INTEL"
-    }
-    header = emojis.get(category.lower(), "🔥 LATEST")
-    
-    tags_map = {
-        "tech": "#Tech #AI #DeepTech",
-        "defence": "#DefenseTech #Military #Aerospace",
-        "physics": "#Physics #Quantum #Science",
-        "all": "#Tech #Physics #DefenseTech"
-    }
-    tags = tags_map.get(category.lower(), "#Tech #Innovation")
-    
-    title = article['title']
-    link = article.get('link', '').strip()
-    
-    # Twitter counts any URL as 23 characters (t.co)
-    # Target raw format:
-    # {header}: {title}\n\n🔗 {link}\n\n{tags}
-    link_section = f"🔗 {link}\n\n" if link else ""
-    
-    # Calculate character budget (reserving ~23 chars for Twitter t.co URL)
-    url_weight = 23 if link else 0
-    overhead = len(header) + 2 + len("\n\n🔗 \n\n") + len(tags) + url_weight
-    max_title_len = X_FREE_CHAR_LIMIT - overhead
-    
-    if len(title) > max_title_len:
-        title = title[:max_title_len].rsplit(' ', 1)[0] + "..."
-        
-    return f"{header}: {title}\n\n{link_section}{tags}"
+    """Use the source headline without adding unsupported significance."""
+    return clean_x_tweet_output(article['title'], category, article.get('link', ''))
+
 
 def open_url_in_browser(url):
     """Robustly opens a URL on Windows using os.startfile, cmd start, and chrome fallback."""
@@ -259,13 +310,13 @@ def open_url_in_browser(url):
             return True
     except Exception:
         pass
-        
+
     try:
         subprocess.run(["cmd.exe", "/c", "start", "", url], shell=False)
         return True
     except Exception:
         pass
-        
+
     try:
         webbrowser.open(url, new=2)
         return True
@@ -312,14 +363,14 @@ def display_plan_and_post(category, article):
     print(f" Headline   : {article['title']}")
     print(f" Source URL : {article.get('link', 'N/A')}")
     print("-" * 65)
-    
+
     print("[*] Generating single-story tweet formatted for X (<= 280 chars)...")
     post_draft = generate_single_story_x_post(category, article)
-    
+
     while True:
-        char_count = len(post_draft)
-        status_color = "✔ PASS (< 280)" if char_count <= X_FREE_CHAR_LIMIT else "❌ EXCEEDS 280"
-        
+        char_count = x_character_count(post_draft)
+        status_color = "✔ PASS (<= 280)" if char_count <= X_FREE_CHAR_LIMIT else "❌ EXCEEDS 280"
+
         print("\n" + "-" * 65)
         print(" 📝 DRAFTED TWEET (SINGLE STORY):")
         print("-" * 65)
@@ -335,10 +386,13 @@ def display_plan_and_post(category, article):
         print("   [S] Save Draft to disk")
         print("   [R] Regenerate post with AI")
         print("   [M] Back to Main Menu")
-        
+
         action = input("\nChoose action [P/C/E/S/R/M]: ").strip().lower()
-        
+
         if action == 'p':
+            if char_count > X_FREE_CHAR_LIMIT:
+                print('[!] Shorten the draft to 280 characters before posting.')
+                continue
             open_x_intent(post_draft)
             copy_to_clipboard(post_draft)
             print("\n[✔] Opened X composer in browser and copied text to clipboard!")
@@ -379,35 +433,35 @@ def run_menu():
         print(" [3] ⚛️ Search Physics / Quantum (1 Top Story)")
         print(" [Q] Quit")
         print("-" * 65)
-        
+
         choice = input("Select an option [1-3, Q]: ").strip().lower()
         if choice == 'q':
             print("Exiting.")
             break
-            
+
         category_map = {'1': 'tech', '2': 'defence', '3': 'physics'}
         if choice not in category_map:
             print("[!] Invalid option. Please choose 1, 2, 3, or Q.")
             continue
-            
+
         cat = category_map[choice]
         print(f"\n[*] Searching latest authoritative news in '{cat.upper()}'...")
         articles = fetch_category_news(cat, max_items=4)
-        
+
         if not articles:
             print("[!] No articles found. Please check internet connection.")
             continue
-            
+
         print(f"\n[+] Top stories found:")
         for idx, a in enumerate(articles, 1):
             print(f"    [{idx}] {a['title']} ({a['source']})")
-            
+
         story_idx = input(f"\nSelect story to Plan & Post [1-{len(articles)}, default=1]: ").strip()
         try:
             selected_article = articles[int(story_idx) - 1] if story_idx.isdigit() and 1 <= int(story_idx) <= len(articles) else articles[0]
         except Exception:
             selected_article = articles[0]
-            
+
         display_plan_and_post(cat, selected_article)
 
 if __name__ == "__main__":
