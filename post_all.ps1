@@ -2,7 +2,7 @@
 .SYNOPSIS
     PotatoClaw V2 Master Posting Hub (X Posts)
 .DESCRIPTION
-    Launches single-story news posting to X powered by PotatoClaw V2 BMW Agent.
+    Launches concise factual news posting to X powered by PotatoClaw V3.
 .EXAMPLE
     .\post_all.ps1
     .\post_all.ps1 x tech

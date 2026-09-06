@@ -30,6 +30,7 @@ from fresh_start import purge_all_caches
 from x_news_engine import (
     fetch_category_news,
     generate_single_story_x_post,
+    x_character_count,
     copy_to_clipboard as x_copy_to_clipboard,
     save_draft as x_save_draft
 )
@@ -65,17 +66,22 @@ def run_x_post_workflow(category="tech", auto_open=True):
         
     article = articles[0]
     print(f"[+] Selected: {article['title']} ({article['source']})")
-    print(f"[*] Crafting tweet using PotatoClaw V2 BMW model...")
+    print(f"[*] Crafting a concise factual post using PotatoClaw V3...")
     post_text = generate_single_story_x_post(category, article)
+
+    if not post_text:
+        print("[!] Could not create a valid post within X's 280-character limit.")
+        return None
     
     draft_file = x_save_draft(post_text, category, article['title'])
     x_copy_to_clipboard(post_text)
     
     print("\n" + "=" * 65)
-    print(" 🐦 X (TWITTER) POST READY (STRICTLY UNDER 280 CHARACTERS):")
+    print(" 🐦 X POST READY (FACTUAL STYLE, WITHIN 280 CHARACTERS):")
     print("=" * 65)
     print(post_text)
     print("=" * 65)
+    print(f" [✔] X weighted character count: {x_character_count(post_text)} / 280")
     print(f" [✔] Post text copied to Windows clipboard!")
     if draft_file:
         print(f" [✔] Draft saved to: {draft_file}")
