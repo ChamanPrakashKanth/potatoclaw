@@ -70,8 +70,16 @@ def run_x_post_workflow(category="tech", auto_open=True):
     post_text = generate_single_story_x_post(category, article)
 
     if not post_text:
-        print("[!] Could not create a valid post within X's 280-character limit.")
-        return None
+        print("[!] Automatic drafting failed. You can enter your own factual summary.")
+        try:
+            post_text = input("Enter draft (blank to return): ").strip()
+        except EOFError:
+            return None
+        if not post_text:
+            return None
+        if x_character_count(post_text) > 280:
+            print("[!] Draft exceeds 280 characters. Please shorten it and try again.")
+            return None
     
     draft_file = x_save_draft(post_text, category, article['title'])
     x_copy_to_clipboard(post_text)

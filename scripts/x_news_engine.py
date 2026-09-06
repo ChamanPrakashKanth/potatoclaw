@@ -10,6 +10,7 @@ import sys
 import os
 import io
 import urllib.request
+import urllib.error
 import urllib.parse
 import xml.etree.ElementTree as ET
 import json
@@ -18,6 +19,7 @@ import subprocess
 import webbrowser
 import re
 import unicodedata
+import socket
 from datetime import datetime
 
 try:
@@ -45,6 +47,7 @@ if sys.platform == "win32":
 SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
 MODEL_ID = "spark-x2.5-4b:latest"
 X_FREE_CHAR_LIMIT = 280
+SPARK_DRAFT_TIMEOUT_SECONDS = 180
 
 # Authoritative, high-signal feeds
 FEEDS = {
@@ -161,7 +164,7 @@ def x_character_count(text):
                else 2 for c in text)
 
 
-def clean_x_tweet_output(raw_text, category, link=""):
+def clean_x_tweet_output(raw_text, category, link="", source=""):
     """
     Deterministically cleans, verifies, and formats LLM output for X (Twitter).
     Suppresses CoT thinking, removes meta-deliberation and prompt leakage,
@@ -201,9 +204,12 @@ def clean_x_tweet_output(raw_text, category, link=""):
         return None
 
     content = " ".join(cleaned_lines).strip()
-    content = re.sub(r'https?://\S+|(?<!\w)#\w+', '', content)
+    content = re.sub(r'https?://\S+|\b(?:www\.)?[\w-]+\.(?:org|com|net|in)(?:/\S*)?|(?<!\w)#\w+', '', content, flags=re.IGNORECASE)
     content = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0f\u200d]', '', content)
     content = re.sub(r'\s+', ' ', content).strip()
+    publisher = source.split(' (', 1)[0].strip()
+    if publisher and re.search(r'\b' + re.escape(publisher) + r'\b', content, re.IGNORECASE):
+        return None
 
     # If content still contains blatant prompt constraints / meta-talk, reject
     if any(re.search(pat, content.lower()) for pat in META_REASONING_PATTERNS):
@@ -216,8 +222,7 @@ def clean_x_tweet_output(raw_text, category, link=""):
     # Normalize whitespace
     content = re.sub(r'\s+', ' ', content).strip()
 
-    link = link.strip() if link else ""
-    link_section = f"\n\n{link}" if link else ""
+    link_section = ""
     if x_character_count(content + link_section) <= X_FREE_CHAR_LIMIT:
         return content + link_section
 
@@ -248,12 +253,11 @@ def generate_single_story_x_post(category, article):
         bwm = BoundedWorkingMemory(max_total_chars=500)
         bwm.add_protected_fact(f"Category: {category.upper()}")
         bwm.add_fact(f"Headline: {article['title']}")
-        bwm.add_fact(f"Source: {article['source']}")
         if article.get('desc'):
             bwm.add_fact(f"Intel: {article['desc'][:120]}")
         bwm_block = bwm.format_prompt_block()
     else:
-        bwm_block = f"HEADLINE: {article['title']}\nSOURCE: {article['source']}"
+        bwm_block = f"HEADLINE: {article['title']}\nFACTS: {article.get('desc', '')[:120]}"
 
     prompt = f"""{bwm_block}
 
@@ -262,44 +266,71 @@ Start with the organisation or subject and what happened. Then explain its
 purpose or significance only if supported by the supplied facts.
 Preserve status: a tender or proposal is not a launch or proven capability.
 Use neutral, clear prose. No hype, emojis, hashtags, headings, or calls to action.
-Do not invent details. Do not include links. Output only the post text."""
+Write an original summary of the facts; do not copy the headline or article wording.
+Do not invent details. Omit publisher names, source credits, domains and links.
+Output only the post text."""
 
-    try:
-        payload = {
-            "model": MODEL_ID,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are PotatoClaw V3 X-Engine. Output ONLY the tweet text directly. Never output preambles, thinking steps, constraints, or meta-commentary."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": 120,
-            "temperature": 0.2
-        }
+    print('[*] Waiting for Spark; a cold first draft can take up to 3 minutes.')
+    for attempt in range(2):
+        try:
+            payload = {
+                "model": MODEL_ID,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are PotatoClaw V3 X-Engine. Output ONLY the tweet text directly. Never output preambles, thinking steps, constraints, or meta-commentary."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 256,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "temperature": 0.2
+            }
 
-        req = urllib.request.Request(
-            SPARK_API_URL,
-            data=json.dumps(payload).encode('utf-8'),
-            headers={"Content-Type": "application/json"}
-        )
+            req = urllib.request.Request(
+                SPARK_API_URL,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={"Content-Type": "application/json"}
+            )
 
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            msg = data['choices'][0]['message']
-            content = (msg.get('content') or '').strip()
+            with urllib.request.urlopen(req, timeout=SPARK_DRAFT_TIMEOUT_SECONDS) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                msg = data['choices'][0]['message']
+                content = (msg.get('content') or '').strip()
 
-            cleaned_post = clean_x_tweet_output(content, category, link)
-            if cleaned_post:
-                return cleaned_post
-    except Exception:
-        pass
+                cleaned_post = clean_x_tweet_output(content, category, link, article.get('source', ''))
+                if cleaned_post and cleaned_post.casefold().rstrip('.!?') == article['title'].casefold().rstrip('.!?'):
+                    cleaned_post = None
+                if cleaned_post:
+                    return cleaned_post
+                if attempt == 0:
+                    print('[!] Model returned no usable original draft. Retrying once...')
+        except (socket.timeout, TimeoutError):
+            print('[!] Spark did not finish within 180 seconds. Check the model window for progress or another running request, then retry.')
+            return None
+        except urllib.error.HTTPError as error:
+            print(f'[!] Spark returned HTTP {error.code}. Check the model window for the server error.')
+            return None
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, (socket.timeout, TimeoutError)):
+                print('[!] The connection to Spark timed out. Check the model window and retry.')
+            else:
+                print('[!] Cannot connect to Spark at 127.0.0.1:11435. Check that the local model is listening.')
+            return None
+        except OSError:
+            print('[!] The connection to Spark was interrupted. Check the model window and retry.')
+            return None
+        except (ValueError, KeyError, IndexError, TypeError):
+            print('[!] Spark returned an invalid response.')
+            return None
+
+    print('[!] Spark did not return a usable original draft after two attempts.')
 
     return format_fallback_single_post(category, article)
 
 def format_fallback_single_post(category, article):
-    """Use the source headline without adding unsupported significance."""
-    return clean_x_tweet_output(article['title'], category, article.get('link', ''))
+    """Require regeneration rather than publishing a copied source headline."""
+    return None
 
 
 def open_url_in_browser(url):
@@ -366,6 +397,9 @@ def display_plan_and_post(category, article):
 
     print("[*] Generating single-story tweet formatted for X (<= 280 chars)...")
     post_draft = generate_single_story_x_post(category, article)
+    if not post_draft:
+        print('[!] No original draft generated. Please try again.')
+        return
 
     while True:
         char_count = x_character_count(post_draft)
@@ -417,7 +451,11 @@ def display_plan_and_post(category, article):
             print(f"[✔] Draft saved to: {saved_path}")
         elif action == 'r':
             print("[*] Regenerating single-story post...")
-            post_draft = generate_single_story_x_post(category, article)
+            regenerated = generate_single_story_x_post(category, article)
+            if regenerated:
+                post_draft = regenerated
+            else:
+                print('[!] No original draft generated. Keeping the current draft.')
         elif action == 'm':
             break
         else:
@@ -474,6 +512,9 @@ if __name__ == "__main__":
             article = arts[0]
             print(f"[+] Selected: {article['title']} ({article['source']})")
             draft = generate_single_story_x_post(cat, article)
+            if not draft:
+                print('[!] No original draft generated. Please try again.')
+                sys.exit(1)
             print("\n" + "=" * 60)
             print(draft)
             print("=" * 60)

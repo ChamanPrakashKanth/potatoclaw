@@ -8,6 +8,7 @@ Unit and regression tests for PotatoClaw X (Twitter) News Engine:
 
 import io
 import json
+import socket
 import unittest
 from unittest.mock import patch
 
@@ -51,7 +52,7 @@ class XNewsEngineTests(unittest.TestCase):
         self.assertNotIn("280", cleaned)
         self.assertTrue(cleaned.startswith("DRDO"))
         self.assertNotIn("#", cleaned)
-        self.assertIn(link, cleaned)
+        self.assertNotIn(link, cleaned)
 
     def test_think_tags_and_fences_are_removed(self):
         """Tests that <think> tags, markdown fences, and quotes are cleanly stripped."""
@@ -61,7 +62,7 @@ class XNewsEngineTests(unittest.TestCase):
         self.assertNotIn("<think>", cleaned)
         self.assertNotIn("```", cleaned)
         self.assertTrue(cleaned.startswith("Quantum"))
-        self.assertIn("https://phys.org/quantum-123", cleaned)
+        self.assertNotIn("https://phys.org/quantum-123", cleaned)
 
     def test_tweet_length_strictly_enforced_with_tco_weighting(self):
         """Tests that effective character length is strictly <= 280 with URL counting as 23 chars."""
@@ -74,8 +75,8 @@ class XNewsEngineTests(unittest.TestCase):
         effective_len = len(re.sub(r'https?://\S+', 'X'*23, cleaned))
         self.assertLessEqual(effective_len, X_FREE_CHAR_LIMIT)
 
-    def test_fallback_generates_valid_posts_for_all_categories(self):
-        """Tests deterministic fallback for tech, defence, indian_defence, physics."""
+    def test_fallback_does_not_copy_source_headlines(self):
+        """Failed generation must not publish a verbatim headline."""
         article = {
             "title": "DRDO invites Bids for S-Band High Power Microwave Development",
             "source": "IDRW (Indian Defence)",
@@ -85,14 +86,7 @@ class XNewsEngineTests(unittest.TestCase):
         for cat in ["tech", "defence", "indian_defence", "physics"]:
             with self.subTest(category=cat):
                 post = format_fallback_single_post(cat, article)
-                self.assertIsNotNone(post)
-                self.assertIn("DRDO", post)
-                self.assertIn(article["link"], post)
-                self.assertNotIn("#", post)
-                
-                import re
-                effective_len = len(re.sub(r'https?://\S+', 'X'*23, post))
-                self.assertLessEqual(effective_len, X_FREE_CHAR_LIMIT)
+                self.assertIsNone(post)
 
     def test_generate_single_story_falls_back_cleanly_on_bad_llm_response(self):
         """Tests that generate_single_story_x_post falls back to template if LLM gives pure CoT."""
@@ -111,14 +105,54 @@ class XNewsEngineTests(unittest.TestCase):
             }]
         }
         
-        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps(bad_response).encode('utf-8'))):
+        with patch("urllib.request.urlopen", side_effect=lambda *a, **kw: io.BytesIO(json.dumps(bad_response).encode('utf-8'))):
             post = generate_single_story_x_post("defence", article)
-            self.assertIsNotNone(post)
-            # The contaminated text must NOT appear in the final post
-            self.assertNotIn("We are asked", post)
-            self.assertNotIn("The constraints", post)
-            self.assertNotIn("280", post)
-            self.assertTrue(post.startswith("DRDO"))
+            self.assertIsNone(post)
+
+    def test_generated_post_omits_source_and_rejects_copied_headline(self):
+        article = {
+            'title': 'DRDO invites bids for microwave evaluation system',
+            'source': 'IDRW (Indian Defence)',
+            'link': 'https://idrw.org/story',
+        }
+        for raw, expected in [
+            ('DRDO is seeking proposals for a microwave evaluation system. https://idrw.org/story',
+             'DRDO is seeking proposals for a microwave evaluation system.'),
+            ('DRDO is seeking proposals for a microwave evaluation system. idrw.org',
+             'DRDO is seeking proposals for a microwave evaluation system.'),
+            ('IDRW reports that DRDO is seeking proposals for a microwave evaluation system.', None),
+            (article['title'], None),
+        ]:
+            response = {'choices': [{'message': {'content': raw}}]}
+            with self.subTest(raw=raw), patch('urllib.request.urlopen', side_effect=lambda *a, **kw: io.BytesIO(json.dumps(response).encode())):
+                self.assertEqual(generate_single_story_x_post('defence', article), expected)
+
+    def test_empty_model_output_retries_and_recovers(self):
+        article = {'title': 'India Eyes Ex-French Mirage-2000 Jets', 'source': 'IDRW'}
+        draft = 'India is considering former French Mirage-2000 aircraft to extend its fleet life.'
+        responses = [
+            {'choices': [{'message': {'content': '', 'reasoning_content': 'Internal deliberation'}}]},
+            {'choices': [{'message': {'content': draft}}]},
+        ]
+        with patch('urllib.request.urlopen', side_effect=[io.BytesIO(json.dumps(r).encode()) for r in responses]):
+            self.assertEqual(generate_single_story_x_post('defence', article), draft)
+
+    def test_slow_generation_has_time_to_finish_and_timeout_is_identified(self):
+        article = {'title': 'India Eyes Ex-French Mirage-2000 Jets', 'source': 'IDRW'}
+        draft = 'India is considering former French Mirage-2000 aircraft.'
+
+        def slow_response(request, timeout):
+            if timeout < 120:
+                raise socket.timeout('generation still running')
+            return io.BytesIO(json.dumps({'choices': [{'message': {'content': draft}}]}).encode())
+
+        with patch('urllib.request.urlopen', side_effect=slow_response):
+            self.assertEqual(generate_single_story_x_post('defence', article), draft)
+        with patch('urllib.request.urlopen', side_effect=socket.timeout()), patch('builtins.print') as output:
+            self.assertIsNone(generate_single_story_x_post('defence', article))
+            messages = ' '.join(str(call.args[0]) for call in output.call_args_list)
+            self.assertIn('did not finish within', messages)
+            self.assertNotIn('Cannot connect', messages)
 
 
 if __name__ == "__main__":
