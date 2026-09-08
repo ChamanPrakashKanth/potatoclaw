@@ -39,6 +39,13 @@ if SCRIPT_DIR not in sys.path:
 from potato_chat import repair_tool_json
 from potato_verifier import DeterministicVerifier
 
+try:
+    from potato_cdp import compose_x_thread_cdp, is_cdp_listening, generate_browser_console_script
+except ImportError:
+    compose_x_thread_cdp = None
+    is_cdp_listening = None
+    generate_browser_console_script = None
+
 QWEN_API_URL = "http://127.0.0.1:11436/v1/chat/completions"
 QWEN_HEALTH_URL = "http://127.0.0.1:11436/health"
 QWEN_MODEL_ID = "qwen2.5-0.5b:latest"
@@ -556,16 +563,32 @@ def run_browser_agent(
         for idx, part in enumerate(thread_parts, 1):
             print(f"   [Part {idx}/{len(thread_parts)}] ({len(part)} chars): {part[:60]}...")
 
+        # A. If Chrome CDP is active on port 9222/9223, use automated multi-box composition
+        if compose_x_thread_cdp and is_cdp_listening:
+            active_port = 9222 if is_cdp_listening(9222) else (9223 if is_cdp_listening(9223) else None)
+            if active_port:
+                print(f"[*] Detected active Chrome/Edge CDP on port {active_port}. Starting automated thread typing...")
+                cdp_res = compose_x_thread_cdp(thread_parts, allow_submit=allow_submit, port=active_port)
+                if cdp_res.get("status") in ["PREPARED_SAFE", "SUBMITTED"]:
+                    return cdp_res
+                print(f"[PotatoBrowserAgent] Note: CDP composition returned {cdp_res.get('status')}; falling back to intent URL.")
+
+        # B. Fallback: Open X composer, copy 1-click console script & text to Windows clipboard
         encoded_part1 = urllib.parse.quote(thread_parts[0])
         intent_url = f"https://x.com/intent/post?text={encoded_part1}"
         print(f"[*] Opening browser with Part 1 pre-filled in X compose box...")
         open_url_direct(intent_url)
 
         if len(thread_parts) > 1:
-            combined = "\n\n---\n\n".join([f"[{i+1}/{len(thread_parts)}]\n{p}" for i, p in enumerate(thread_parts)])
-            copy_to_clipboard(combined)
-            print(f"[✔] Copied all {len(thread_parts)} thread parts to Windows clipboard!")
-            print("    (Post part 1 in the opened browser, then reply and press Ctrl+V for remaining parts)")
+            if generate_browser_console_script:
+                snippet = generate_browser_console_script(thread_parts)
+                copy_to_clipboard(snippet)
+                print(f"[✔] Copied 1-click DevTools Console script for all {len(thread_parts)} parts to Windows clipboard!")
+                print("    (Press F12 -> Console -> Ctrl+V -> Enter on the opened tab to auto-compose all parts)")
+            else:
+                combined = "\n\n---\n\n".join([f"[{i+1}/{len(thread_parts)}]\n{p}" for i, p in enumerate(thread_parts)])
+                copy_to_clipboard(combined)
+                print(f"[✔] Copied all {len(thread_parts)} thread parts to Windows clipboard!")
         else:
             copy_to_clipboard(thread_parts[0])
             print(f"[✔] Post text copied to Windows clipboard!")

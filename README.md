@@ -337,7 +337,7 @@ Double-click **`post_all.bat`** or run via PowerShell:
 ```
 *Interactive console menu or direct CLI to:*
 - **News to X**: Curate & draft/publish breaking stories via the autonomous Qwen 0.5B browser agent or web intent.
-- **Non-Premium Thread Creator**: Split long articles into $\le 280$-char posts with **zero word cutoff**, or autonomously curate breaking news (Tech, Defence, Physics) into an in-depth 3-part factual thread.
+- **Non-Premium Thread Creator & Pure Python CDP Engine**: Split long articles into $\le 280$-char posts with **zero word cutoff**, and sequentially type each post into X composer (Post 1 $\to$ `[+]` $\to$ Post 2 $\to$ `[+]`) using pure Python Chrome DevTools Protocol (`scripts/potato_cdp.py`), holding safely at the Submit Gate.
 - **Autonomous Browser Agent**: Direct goals with snapshot compaction and irreversible submit safety gates.
 - **Direct CLI shortcuts**:
   ```powershell
@@ -347,7 +347,7 @@ Double-click **`post_all.bat`** or run via PowerShell:
   .\post_all.bat thread "Long article..."          # Split & draft multi-post non-Premium thread (Zero Cutoff)
   .\post_all.bat thread article.txt --allow-submit # Publish thread from file to X
   .\post_all.bat browser "Open X home page"        # Direct autonomous browsing
-  .\post_all.bat test                              # Run all 84 test assertions
+  .\post_all.bat test                              # Run all 94 test assertions
   ```
 
 ---
@@ -357,16 +357,19 @@ Double-click **`post_all.bat`** or run via PowerShell:
 Verify all architectural invariants on your local machine:
 
 ```powershell
-# 1. Run Browser Agent & Non-Premium Thread Splitter Tests (18/18 Passed)
-python scripts\test_potato_browser_agent.py
-
-# 2. Run Comprehensive V3 Architectural Test Suite (48/48 Passed)
+# 1. Run Comprehensive V3 Architectural Test Suite (48/48 Passed)
 python scripts\test_potato_core.py
 
-# 3. Run V2 Integration Test Suite (18/18 Passed)
+# 2. Run V2 Integration Test Suite (18/18 Passed)
 python scripts\test_potato_v2.py
 
-# Total Automated Architectural Verification: 84/84 Passed (100%)
+# 3. Run Browser Agent & Non-Premium Thread Splitter Tests (18/18 Passed)
+python scripts\test_potato_browser_agent.py
+
+# 4. Run Zero-Dependency Chrome CDP Engine Tests (10/10 Passed)
+python scripts\test_potato_cdp.py
+
+# Total Automated Architectural Verification: 94/94 Passed (100%)
 
 # Run Live PotatoBench Evaluation Suite (10 Tasks + 8 Ablations)
 python scripts\run_benchmarks.py potatobench

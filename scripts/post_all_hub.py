@@ -45,6 +45,19 @@ except ImportError:
     run_browser_agent = None
     split_x_thread = None
 
+try:
+    from potato_cdp import (
+        compose_x_thread_cdp,
+        generate_browser_console_script,
+        is_cdp_listening,
+        get_active_cdp_port
+    )
+except ImportError:
+    compose_x_thread_cdp = None
+    generate_browser_console_script = None
+    is_cdp_listening = None
+    get_active_cdp_port = None
+
 
 def open_url_in_browser(url: str) -> bool:
     """Robustly opens a URL on Windows using os.startfile, cmd start, and browser fallback."""
@@ -309,6 +322,10 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
     print("-" * 65)
 
     if allow_submit:
+        if compose_x_thread_cdp and get_active_cdp_port and get_active_cdp_port():
+            print(f"\n[*] Active Chrome CDP detected. Publishing {len(parts)}-part thread via Chrome DevTools Protocol...")
+            compose_x_thread_cdp(parts, allow_submit=True)
+            return
         goal = f"Post this on X as a non-Premium thread: {text}"
         print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
         if run_browser_agent:
@@ -316,42 +333,80 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
         return
 
     print(" Actions:")
-    print("   [1] 🤖 Prepare Thread in X Browser (Safe Draft - Recommended)")
-    print("   [2] 🚀 Post Thread Live to X Browser (--allow-submit)")
-    print("   [3] 📋 Copy All Parts to Windows Clipboard")
+    print("   [1] ⚡ Compose Thread via Chrome/Edge CDP (Automated 1 -> [+] -> 2 -> [+])")
+    print("   [2] 🤖 Prepare Thread in X Browser via Agent (Safe Draft)")
+    print("   [3] 🚀 Post Thread Live to X Browser (--allow-submit)")
+    print("   [4] 📋 Copy All Parts to Windows Clipboard")
+    print("   [5] 📜 Copy 1-Click DevTools Console Script (F12)")
     print("   [B] Back to Menu")
     print("-" * 65)
 
     try:
-        act = input("Choose action [1-3, B (default=1)]: ").strip().lower()
+        act = input("Choose action [1-5, B (default=1)]: ").strip().lower()
     except EOFError:
         return
 
     if act in ["1", ""]:
+        print(f"\n[*] Launching PotatoClaw CDP Thread Engine to compose {len(parts)} post(s)...")
+        if compose_x_thread_cdp:
+            cdp_res = compose_x_thread_cdp(parts, allow_submit=False)
+            if cdp_res.get("status") == "CDP_NOT_AVAILABLE":
+                if generate_browser_console_script:
+                    snippet = generate_browser_console_script(parts)
+                    x_copy_to_clipboard(snippet)
+                    print("\n" + "=" * 65)
+                    print(" [!] Chrome CDP endpoint was not reached on port 9222/9223.")
+                    print("     To activate full hands-free CDP: run 'start_chrome_cdp.bat'")
+                    print("     -> 1-Click Fallback: Console script COPIED to clipboard!")
+                    print("     -> Opening https://x.com/compose/post in browser...")
+                    print("     -> Press F12 (Console), then Ctrl+V and Enter to auto-type all posts!")
+                    print("=" * 65)
+                    open_url_in_browser("https://x.com/compose/post")
+                else:
+                    open_url_in_browser("https://x.com/compose/post")
+        else:
+            if run_browser_agent:
+                goal = f"Open X and prepare this as a non-Premium thread: {text}"
+                run_browser_agent(goal, allow_submit=False)
+            else:
+                open_url_in_browser("https://x.com/compose/post")
+    elif act == "2":
         goal = f"Open X and prepare this as a non-Premium thread: {text}"
         print(f"\n[*] Launching PotatoClaw Browser Agent to draft {len(parts)}-part thread...")
         if run_browser_agent:
             run_browser_agent(goal, allow_submit=False)
         else:
             print("[!] potato_browser_agent module not available.")
-    elif act == "2":
+    elif act == "3":
         try:
             confirm = input("\n[CAUTION] You are about to publish a LIVE thread to X. Proceed? [y/N]: ").strip().lower()
         except EOFError:
             confirm = "n"
         if confirm == "y":
-            goal = f"Post this on X as a non-Premium thread: {text}"
-            print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
-            if run_browser_agent:
+            if compose_x_thread_cdp and get_active_cdp_port and get_active_cdp_port():
+                print(f"\n[*] Publishing {len(parts)}-part thread via Chrome CDP...")
+                compose_x_thread_cdp(parts, allow_submit=True)
+            elif run_browser_agent:
+                goal = f"Post this on X as a non-Premium thread: {text}"
+                print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
                 run_browser_agent(goal, allow_submit=True)
             else:
-                print("[!] potato_browser_agent module not available.")
+                print("[!] Browser execution module not available.")
         else:
             print("[*] Live thread publishing cancelled.")
-    elif act == "3":
+    elif act == "4":
         combined = "\n\n---\n\n".join([f"[{i+1}/{len(parts)}]\n{p}" for i, p in enumerate(parts)])
         x_copy_to_clipboard(combined)
         print("[✔] Copied entire thread to Windows clipboard!")
+    elif act == "5":
+        if generate_browser_console_script:
+            snippet = generate_browser_console_script(parts)
+            x_copy_to_clipboard(snippet)
+            print("[✔] Copied 1-click DevTools Console script to Windows clipboard!")
+            print("    Paste this into Chrome/Edge DevTools Console (F12) on https://x.com/compose/post:\n")
+            print(snippet)
+        else:
+            print("[!] Script generator not available.")
 
 
 def run_browser_agent_workflow():
@@ -394,7 +449,7 @@ def show_interactive_hub():
         print(" [3] 🧵 Non-Premium Thread Creator (Deterministic Splitter + Agent)")
         print(" [4] 🌐 Autonomous Browser Agent (Direct Goal / Action Policy)")
         print(" [5] 📊 Run PotatoBench V3 Benchmark Suite (10 Tasks + 8 Ablations)")
-        print(" [6] 🧪 Run All PotatoClaw Tests (Core, V2, Browser Agent - 77 Tests)")
+        print(" [6] 🧪 Run All PotatoClaw Tests (Core, V2, Browser, CDP - 84+ Tests)")
         print(" [Q] Quit")
         print("-" * 65)
         
@@ -430,13 +485,15 @@ def show_interactive_hub():
             except EOFError: pass
         elif choice == '6':
             print("\n" + "=" * 65)
-            print(" RUNNING FULL POTATOCLAW ARCHITECTURAL TEST SUITE (77 TESTS)")
+            print(" RUNNING FULL POTATOCLAW ARCHITECTURAL TEST SUITE (84+ TESTS)")
             print("=" * 65)
-            print("\n[1/3] Running Browser Agent & Thread Splitter Tests...")
+            print("\n[1/4] Running Browser Agent & Thread Splitter Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_browser_agent.py")])
-            print("\n[2/3] Running V3 Core Architectural Tests...")
+            print("\n[2/4] Running Chrome DevTools Protocol (CDP) Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_cdp.py")])
+            print("\n[3/4] Running V3 Core Architectural Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")])
-            print("\n[3/3] Running V2 Integration Tests...")
+            print("\n[4/4] Running V2 Integration Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
@@ -497,11 +554,13 @@ if __name__ == "__main__":
                 allow_submit=allow_submit
             )
         elif cmd in ["test", "tests"]:
-            print("\n[1/3] Running Browser Agent & Thread Splitter Tests...")
+            print("\n[1/4] Running Browser Agent & Thread Splitter Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_browser_agent.py")])
-            print("\n[2/3] Running V3 Core Architectural Tests...")
+            print("\n[2/4] Running Chrome DevTools Protocol (CDP) Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_cdp.py")])
+            print("\n[3/4] Running V3 Core Architectural Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")])
-            print("\n[3/3] Running V2 Integration Tests...")
+            print("\n[4/4] Running V2 Integration Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
         else:
             show_interactive_hub()
