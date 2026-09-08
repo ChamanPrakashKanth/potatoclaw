@@ -314,7 +314,7 @@ def check_model_server():
     except Exception:
         return False
 
-def call_potato_agent(messages, max_tokens=250, temperature=0.1):
+def call_potato_agent(messages, max_tokens=1000, temperature=0.1):
     """
     Calls local Spark-X2.5-4B server with strict reasoning separation.
     Suppresses internal chain-of-thought monologues from reaching the user.
@@ -322,17 +322,34 @@ def call_potato_agent(messages, max_tokens=250, temperature=0.1):
     payload = {
         "model": MODEL_ID,
         "messages": messages,
-        "max_tokens": max_tokens,
+        "max_tokens": min(max_tokens, 1000),
         "temperature": temperature
     }
     t0 = time.time()
     try:
+        server_url = SPARK_HEALTH_URL.rsplit('/', 1)[0]
+        counts = {"messages": messages, "add_generation_prompt": True}
+        for endpoint in ("apply-template", "tokenize"):
+            count_req = urllib.request.Request(
+                f"{server_url}/{endpoint}",
+                data=json.dumps(counts).encode('utf-8'),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(count_req, timeout=10) as count_resp:
+                counted = json.loads(count_resp.read().decode('utf-8'))
+            if endpoint == "apply-template":
+                counts = {"content": counted["prompt"], "add_special": True,
+                          "parse_special": True}
+        if len(counted["tokens"]) > 1000:
+            return {"success": False, "elapsed": time.time() - t0,
+                    "error": "Input token budget exceeded",
+                    "content": "Input exceeds 1,000 tokens including instructions and history. Use /reset or shorten your request."}
         req = urllib.request.Request(
             SPARK_API_URL,
             data=json.dumps(payload).encode('utf-8'),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             elapsed = time.time() - t0
             msg = data['choices'][0]['message']

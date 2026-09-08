@@ -1,13 +1,17 @@
 <#
 .SYNOPSIS
-    PotatoClaw V2 Master Posting Hub (X Posts)
+    PotatoClaw V3 Master Posting Hub & Autonomous Browser Agent
 .DESCRIPTION
-    Launches concise factual news posting to X powered by PotatoClaw V3.
+    Launches concise factual news posting to X, non-Premium thread creation,
+    and autonomous browser interactions powered by Spark-X2.5-4B reasoning,
+    Qwen2.5-0.5B browser policy, and deterministic verification.
 .EXAMPLE
     .\post_all.ps1
     .\post_all.ps1 x tech
-    .\post_all.ps1 x physics
-    .\post_all.ps1 x defence
+    .\post_all.ps1 x tech --browser
+    .\post_all.ps1 thread "Long article text to split into X thread..."
+    .\post_all.ps1 browser "Open https://x.com and check home page"
+    .\post_all.ps1 test
 #>
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

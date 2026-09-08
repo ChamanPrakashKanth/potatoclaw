@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 PotatoClaw Master Content & Posting Hub
-Connects PotatoClaw V2 BMW Agent to X (Twitter) single-story news posting workflows,
-benchmarks, and architectural test suites.
+Connects PotatoClaw V3 Agent, Autonomous Browser Agent (Qwen 0.5B),
+and Deterministic Non-Premium X Thread Splitter to X (Twitter) posting workflows.
 """
 
 import sys
@@ -35,8 +35,15 @@ from x_news_engine import (
     save_draft as x_save_draft
 )
 
-def open_url_in_browser(url):
-    """Robustly opens a URL on Windows using os.startfile, cmd start, and chrome fallback."""
+try:
+    from potato_browser_agent import run_browser_agent, split_x_thread
+except ImportError:
+    run_browser_agent = None
+    split_x_thread = None
+
+
+def open_url_in_browser(url: str) -> bool:
+    """Robustly opens a URL on Windows using os.startfile, cmd start, and browser fallback."""
     try:
         if sys.platform == "win32":
             os.startfile(url)
@@ -57,7 +64,12 @@ def open_url_in_browser(url):
         pass
     return False
 
-def run_x_post_workflow(category="tech", auto_open=True):
+
+def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_mode: str = None, allow_submit: bool = False):
+    """
+    Curates #1 news story, drafts a concise post <= 280 chars, and routes
+    to the autonomous browser agent or browser intent.
+    """
     print(f"\n[*] Curating #1 breaking story in '{category.upper()}' for X (Twitter)...")
     articles = fetch_category_news(category, max_items=1)
     if not articles:
@@ -93,37 +105,208 @@ def run_x_post_workflow(category="tech", auto_open=True):
     print(f" [✔] Post text copied to Windows clipboard!")
     if draft_file:
         print(f" [✔] Draft saved to: {draft_file}")
+
+    if browser_mode == "agent":
+        if run_browser_agent:
+            verb = "Post this on X" if allow_submit else "Open X and prepare a post saying"
+            goal = f"{verb}: {post_text}"
+            print(f"\n[*] Running Autonomous Browser Agent (Submit: {allow_submit})...")
+            run_browser_agent(goal, allow_submit=allow_submit)
+        else:
+            print("[!] potato_browser_agent module not available.")
+        return post_text
         
     if auto_open:
+        print("\n" + "-" * 65)
+        print(" Choose Posting Method:")
+        print("   [1] 🤖 Prepare in X via Autonomous Browser Agent (Safe Draft)")
+        print("   [2] 🚀 Post Live to X via Autonomous Browser Agent (--allow-submit)")
+        print("   [3] 🌐 Open X Web Composer URL (Manual Ctrl+V)")
+        print("   [S] Skip browser action")
+        print("-" * 65)
         try:
-            choice = input("\nOpen X Web Composer now? [Y/n]: ").strip().lower()
-            if choice != 'n':
-                encoded = urllib.parse.quote(post_text)
-                intent_url = f"https://x.com/intent/post?text={encoded}"
-                open_url_in_browser(intent_url)
-                print("[✔] Opened X Post Composer in browser! Press Ctrl+V to paste & post.")
+            choice = input("Select an option [1-3, S (default=1)]: ").strip().lower()
         except EOFError:
-            pass
+            choice = "s"
+
+        if choice in ["1", ""]:
+            if run_browser_agent:
+                goal = f"Open X and prepare a post saying: {post_text}"
+                print("\n[*] Launching PotatoClaw Autonomous Browser Agent (Safe Draft)...")
+                run_browser_agent(goal, allow_submit=False)
+            else:
+                encoded = urllib.parse.quote(post_text)
+                open_url_in_browser(f"https://x.com/intent/post?text={encoded}")
+        elif choice == "2":
+            if run_browser_agent:
+                try:
+                    conf = input("\n[CAUTION] You are about to post LIVE to X. Proceed? [y/N]: ").strip().lower()
+                except EOFError:
+                    conf = "n"
+                if conf == "y":
+                    goal = f"Post this on X: {post_text}"
+                    print("\n[*] Launching PotatoClaw Autonomous Browser Agent (Live Post)...")
+                    run_browser_agent(goal, allow_submit=True)
+                else:
+                    print("[*] Live submission cancelled.")
+            else:
+                print("[!] potato_browser_agent module not available.")
+        elif choice == "3":
+            encoded = urllib.parse.quote(post_text)
+            intent_url = f"https://x.com/intent/post?text={encoded}"
+            open_url_in_browser(intent_url)
+            print("[✔] Opened X Post Composer in browser! Press Ctrl+V to paste & post.")
         
     return post_text
+
+
+def run_thread_workflow(initial_text: str = None, allow_submit: bool = False):
+    """
+    Creates and posts/prepares a non-Premium X thread from long text or a file.
+    Deterministic thread splitting into <=280 character parts.
+    """
+    print("\n" + "=" * 65)
+    print("   POTATOCLAW NON-PREMIUM X THREAD COMPOSER")
+    print("=" * 65)
+    print(" Splits any long text/article into standard <=280-char X posts.")
+    print(" Automatically fills each part in X browser using Qwen 0.5B policy.")
+    print("-" * 65)
+
+    text = initial_text
+    if not text:
+        print("Enter thread text or path to a text file (or 'B' to go back):")
+        try:
+            line = input("> ").strip()
+        except EOFError:
+            return
+        if not line or line.lower() == 'b':
+            return
+        if os.path.isfile(line):
+            try:
+                with open(line, "r", encoding="utf-8", errors="replace") as f:
+                    text = f.read().strip()
+                print(f"[✔] Loaded {len(text)} characters from {line}")
+            except Exception as e:
+                print(f"[!] Failed to read file {line}: {e}")
+                return
+        else:
+            text = line
+
+    if not text:
+        print("[!] No text provided.")
+        return
+
+    try:
+        num_choice = input("\nAdd post numbering (e.g. 1/4, 2/4)? [y/N]: ").strip().lower()
+        add_num = (num_choice == 'y')
+    except EOFError:
+        add_num = False
+
+    if split_x_thread:
+        parts = split_x_thread(text, max_chars=280, add_numbering=add_num)
+    else:
+        parts = [text[i:i+280] for i in range(0, len(text), 280)]
+
+    print(f"\n[✔] Deterministically split into {len(parts)} thread post(s):")
+    print("-" * 65)
+    for idx, part in enumerate(parts, 1):
+        print(f" [Post {idx}/{len(parts)}] ({len(part)} chars):")
+        print(part)
+        print()
+    print("-" * 65)
+
+    if allow_submit:
+        goal = f"Post this on X as a non-Premium thread: {text}"
+        print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
+        if run_browser_agent:
+            run_browser_agent(goal, allow_submit=True)
+        return
+
+    print(" Actions:")
+    print("   [1] 🤖 Prepare Thread in X Browser (Safe Draft - No Auto-Submit)")
+    print("   [2] 🚀 Post Thread Live to X Browser (--allow-submit)")
+    print("   [3] 📋 Copy All Parts to Windows Clipboard")
+    print("   [B] Back to Menu")
+    print("-" * 65)
+
+    try:
+        act = input("Choose action [1-3, B (default=1)]: ").strip().lower()
+    except EOFError:
+        return
+
+    if act in ["1", ""]:
+        goal = f"Open X and prepare this as a non-Premium thread: {text}"
+        print(f"\n[*] Launching PotatoClaw Browser Agent to draft {len(parts)}-part thread...")
+        if run_browser_agent:
+            run_browser_agent(goal, allow_submit=False)
+        else:
+            print("[!] potato_browser_agent module not available.")
+    elif act == "2":
+        try:
+            confirm = input("\n[CAUTION] You are about to publish a LIVE thread to X. Proceed? [y/N]: ").strip().lower()
+        except EOFError:
+            confirm = "n"
+        if confirm == "y":
+            goal = f"Post this on X as a non-Premium thread: {text}"
+            print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
+            if run_browser_agent:
+                run_browser_agent(goal, allow_submit=True)
+            else:
+                print("[!] potato_browser_agent module not available.")
+        else:
+            print("[*] Live thread publishing cancelled.")
+    elif act == "3":
+        combined = "\n\n---\n\n".join([f"[{i+1}/{len(parts)}]\n{p}" for i, p in enumerate(parts)])
+        x_copy_to_clipboard(combined)
+        print("[✔] Copied entire thread to Windows clipboard!")
+
+
+def run_browser_agent_workflow():
+    """Direct goal submission for the PotatoClaw Autonomous Browser Agent."""
+    print("\n" + "=" * 65)
+    print("   POTATOCLAW AUTONOMOUS BROWSER AGENT")
+    print("=" * 65)
+    print(" Dedicated Qwen 0.5B Browser Action Policy on port 11436.")
+    print(" Deterministic snapshot compaction, step execution & safety gates.")
+    print("-" * 65)
+    try:
+        goal = input("Enter browsing goal (e.g. 'Open https://x.com and check home page'):\n> ").strip()
+    except EOFError:
+        return
+    if not goal:
+        return
+
+    try:
+        sub_choice = input("Allow irreversible submit actions (--allow-submit)? [y/N]: ").strip().lower()
+        allow_sub = (sub_choice == 'y')
+    except EOFError:
+        allow_sub = False
+
+    if run_browser_agent:
+        run_browser_agent(goal, allow_submit=allow_sub)
+    else:
+        print("[!] potato_browser_agent module not available.")
+
 
 def show_interactive_hub():
     while True:
         print("\n" + "=" * 65)
         print("   POTATOCLAW V3 MASTER AUTOMATION & AGENT HUB")
         print("=" * 65)
-        print(" Model: Spark-X2.5-4B (Q4_K_M) | GPU: GTX 1650 | Context: 2048")
-        print(" Engine: Graph-LLM DAG + BWM + Deterministic Verifier")
+        print(" Models: Spark-X2.5-4B (11435) | Qwen2.5-0.5B Browser (11436)")
+        print(" Engine: Graph-LLM DAG + BWM + Verifier + CDP Browser Policy")
         print("-" * 65)
         print(" [1] 🥔 Chat with Potato AI Agent V3 (Interactive Mode)")
-        print(" [2] 🐦 Post Single-Story News to X (V3 BWM & Verifier Powered)")
-        print(" [3] 📊 Run PotatoBench V3 Benchmark Suite (10 Tasks + 8 Ablations)")
-        print(" [4] 🧪 Run PotatoClaw V3 Comprehensive Tests (48 Assertions)")
+        print(" [2] 🐦 Curate & Post News to X (Browser Agent / Intent)")
+        print(" [3] 🧵 Non-Premium Thread Creator (Deterministic Splitter + Agent)")
+        print(" [4] 🌐 Autonomous Browser Agent (Direct Goal / Action Policy)")
+        print(" [5] 📊 Run PotatoBench V3 Benchmark Suite (10 Tasks + 8 Ablations)")
+        print(" [6] 🧪 Run All PotatoClaw Tests (Core, V2, Browser Agent - 77 Tests)")
         print(" [Q] Quit")
         print("-" * 65)
         
         try:
-            choice = input("Select an option [1-4, Q]: ").strip().lower()
+            choice = input("Select an option [1-6, Q]: ").strip().lower()
         except EOFError:
             break
             
@@ -141,34 +324,88 @@ def show_interactive_hub():
                 try: input("\nPress Enter to return to main menu...")
                 except EOFError: pass
         elif choice == '3':
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potatobench"])
+            run_thread_workflow()
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
         elif choice == '4':
+            run_browser_agent_workflow()
+            try: input("\nPress Enter to return to main menu...")
+            except EOFError: pass
+        elif choice == '5':
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "run_benchmarks.py"), "potatobench"])
+            try: input("\nPress Enter to return to main menu...")
+            except EOFError: pass
+        elif choice == '6':
+            print("\n" + "=" * 65)
+            print(" RUNNING FULL POTATOCLAW ARCHITECTURAL TEST SUITE (77 TESTS)")
+            print("=" * 65)
+            print("\n[1/3] Running Browser Agent & Thread Splitter Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_browser_agent.py")])
+            print("\n[2/3] Running V3 Core Architectural Tests...")
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")])
+            print("\n[3/3] Running V2 Integration Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
             try: input("\nPress Enter to return to main menu...")
             except EOFError: pass
         else:
-            print("[!] Invalid choice. Please select 1, 2, 3, 4, or Q.")
+            print("[!] Invalid choice. Please select 1-6, or Q.")
+
 
 def select_category():
     print("\nSelect Category:")
     print(" [1] 🤖 Tech & Artificial Intelligence")
     print(" [2] 🛡️ Defence & Aerospace")
     print(" [3] ⚛️ Physics & Quantum Science")
-    c = input("Choice [1-3, default=1]: ").strip()
+    try:
+        c = input("Choice [1-3, default=1]: ").strip()
+    except EOFError:
+        return 'tech'
     map_cat = {'1': 'tech', '2': 'defence', '3': 'physics'}
     return map_cat.get(c, 'tech')
 
+
 if __name__ == "__main__":
-    purge_all_caches(verbose=True)
+    purge_all_caches(verbose=False)
     if len(sys.argv) > 1:
-        cmd = sys.argv[1].lower()
-        cat = sys.argv[2].lower() if len(sys.argv) > 2 else "tech"
+        args = sys.argv[1:]
+        cmd = args[0].lower()
+        allow_submit = "--allow-submit" in args
+        use_browser = "--browser" in args or "-b" in args
+
         if cmd in ["chat", "agent", "potato"]:
             subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "potato_chat.py")])
+        elif cmd in ["thread", "threads"]:
+            text_parts = [a for a in args[1:] if not a.startswith("--") and not a.startswith("-")]
+            text_arg = " ".join(text_parts).strip() if text_parts else None
+            run_thread_workflow(initial_text=text_arg, allow_submit=allow_submit)
+        elif cmd in ["browser", "browse"]:
+            goal_parts = [a for a in args[1:] if not a.startswith("--") and not a.startswith("-")]
+            goal_arg = " ".join(goal_parts).strip()
+            if not goal_arg:
+                run_browser_agent_workflow()
+            else:
+                if run_browser_agent:
+                    run_browser_agent(goal_arg, allow_submit=allow_submit)
+                else:
+                    print("[!] potato_browser_agent not available.")
         elif cmd == "x":
-            run_x_post_workflow(cat)
+            cat = "tech"
+            remaining = [a for a in args[1:] if not a.startswith("--") and not a.startswith("-")]
+            if remaining:
+                cat = remaining[0].lower()
+            run_x_post_workflow(
+                category=cat,
+                auto_open=True,
+                browser_mode="agent" if use_browser else None,
+                allow_submit=allow_submit
+            )
+        elif cmd in ["test", "tests"]:
+            print("\n[1/3] Running Browser Agent & Thread Splitter Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_browser_agent.py")])
+            print("\n[2/3] Running V3 Core Architectural Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")])
+            print("\n[3/3] Running V2 Integration Tests...")
+            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
         else:
             show_interactive_hub()
     else:

@@ -1,10 +1,11 @@
 @echo off
 chcp 65001 >nul
-title PotatoClaw - X News Posting Hub
+title PotatoClaw - X News ^& Autonomous Browser Agent Hub
 color 0A
 
 echo ======================================================================
-echo   POTATOCLAW V3 X NEWS POSTING HUB
+echo   POTATOCLAW V3 - X POSTING HUB ^& AUTONOMOUS BROWSER AGENT
+echo   Spark-X2.5-4B (11435) ^| Qwen2.5-0.5B (11436) ^| CDP Browser
 echo ======================================================================
 echo.
 

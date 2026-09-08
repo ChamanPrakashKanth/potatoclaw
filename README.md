@@ -264,6 +264,11 @@ graph TD
 5. **🛡️ Failure Memory & Loop Breaker ([`scripts/potato_failure_memory.py`](scripts/potato_failure_memory.py))**:
    - Cryptographic failure signature hashing (`hash(node, action, error)`).
    - Halts 3x identical repeat loops and oscillatory $A \to B \to A \to B$ thrashing.
+6. **🌐 Autonomous Browser Agent & Non-Premium Thread Engine ([`scripts/potato_browser_agent.py`](scripts/potato_browser_agent.py), [`scripts/cdp_bridge.py`](scripts/cdp_bridge.py))**:
+   - Dedicated `Qwen2.5-0.5B-Instruct` browser-action policy on port 11436.
+   - Deterministic non-Premium X thread splitter (`split_x_thread`) for strict $\le 280$-char boundary enforcement.
+   - Submit Safety Gate requiring explicit `--allow-submit` flag before irreversible publishing actions.
+   - Zero-dependency CDP reverse bridge linking Windows Chrome/Edge to WSL2 mirrored network.
 
 ---
 
@@ -291,21 +296,28 @@ graph TD
 - **Storage**: Standard NVMe / SATA SSD
 
 ### Model Runtime Configuration
-- **Model**: `Spark-X2.5-4B-Q4_K_M.gguf` (~2.4 GB GGUF weight)
-- **Inference Engine**: `llama-server` (`llama.cpp`) running inside WSL 2 or Linux
-- **Offload Configuration**: 26 GPU layers offloaded to VRAM (`-ngl 26 -c 2048 -np 1 -fa on -t 6`)
-- **VRAM Allocation**: ~2,165 MiB (leaves ~1.9 GB VRAM free for desktop display)
-- **API Endpoint**: `http://127.0.0.1:11435/v1/chat/completions`
+- **Primary Reasoning Model**: `Spark-X2.5-4B-Q4_K_M.gguf` (~2.4 GB GGUF weight)
+  - **Endpoint**: `http://127.0.0.1:11435/v1/chat/completions` (WSL `OpenClawGateway`)
+  - **Inference Engine**: `llama-server` with Flash Attention (`-ngl 26 -c 2048 -np 1 -fa on -t 6`)
+  - **VRAM Allocation**: ~2,165 MiB (leaves ~1.9 GB VRAM free for desktop display)
+- **Dedicated Browser Policy Model**: `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` (~491 MB GGUF weight)
+  - **Endpoint**: `http://127.0.0.1:11436/v1/chat/completions` (WSL `OpenClawGateway`)
+  - **Inference Engine**: `llama-server` with Flash Attention (`-ngl 99 -c 2048 -np 1 -fa on -t 4`)
+  - **VRAM Allocation**: ~520 MiB | Speed: **~117 tokens/second** on GTX 1650
 
 ---
 
 ## 🚀 Quick Start & 1-Click Launchers
 
-### 1. Start the Local Model Server
+### 1. Start Local Model Servers
 ```powershell
+# Start Primary Reasoning Model (Spark 4B on port 11435)
 .\scripts\start-spark-potato.ps1
+
+# Start Dedicated Browser-Action Policy (Qwen 0.5B on port 11436)
+.\scripts\start-qwen-browser.ps1
 ```
-*Initializes `llama-server` with single-slot Flash Attention on port 11435.*
+*Both servers run locally inside WSL2 with hard context caps ($\le 2048$ tokens) and single-slot Flash Attention.*
 
 ### 2. Launch Interactive Potato AI Agent Chat
 Double-click **`potato_chat.bat`** or run via PowerShell:
@@ -318,12 +330,23 @@ Double-click **`potato_chat.bat`** or run via PowerShell:
 - `read README.md` $\to$ *Fast file inspection with observation compression*
 - `run git status` $\to$ *Verified terminal command execution*
 
-### 3. Launch Master Automation Hub
+### 3. Launch Master Automation Hub & Autonomous Browser Agent
 Double-click **`post_all.bat`** or run via PowerShell:
 ```powershell
 .\post_all.ps1
 ```
-*Interactive console menu to launch Chat, post Tech/Defense/Physics stories to X, or execute benchmarks.*
+*Interactive console menu or direct CLI to:*
+- **News to X**: Curate & draft/publish breaking stories via the autonomous Qwen 0.5B browser agent or web intent.
+- **Non-Premium Thread Creator**: Split long articles into $\le 280$-char parts with deterministic boundaries and draft/publish in X browser.
+- **Autonomous Browser Agent**: Direct goals with snapshot compaction and irreversible submit safety gates.
+- **Direct CLI shortcuts**:
+  ```powershell
+  .\post_all.bat x tech --browser                # Draft breaking tech news in X browser
+  .\post_all.bat thread "Long article..."         # Split & draft multi-post non-Premium thread
+  .\post_all.bat thread article.txt --allow-submit # Publish thread from file to X
+  .\post_all.bat browser "Open X home page"       # Direct autonomous browsing
+  .\post_all.bat test                             # Run all 77 test assertions
+  ```
 
 ---
 
@@ -332,11 +355,16 @@ Double-click **`post_all.bat`** or run via PowerShell:
 Verify all architectural invariants on your local machine:
 
 ```powershell
-# Run Comprehensive V3 Architectural Test Suite (48/48 Passed)
+# 1. Run Browser Agent & Non-Premium Thread Splitter Tests (11/11 Passed)
+python scripts\test_potato_browser_agent.py
+
+# 2. Run Comprehensive V3 Architectural Test Suite (48/48 Passed)
 python scripts\test_potato_core.py
 
-# Run V2 Integration Test Suite (18/18 Passed)
+# 3. Run V2 Integration Test Suite (18/18 Passed)
 python scripts\test_potato_v2.py
+
+# Total Automated Architectural Verification: 77/77 Passed (100%)
 
 # Run Live PotatoBench Evaluation Suite (10 Tasks + 8 Ablations)
 python scripts\run_benchmarks.py potatobench

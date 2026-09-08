@@ -11,7 +11,28 @@ from urllib.error import URLError
 import potato_chat as chat
 
 
+def counted_responses(response, token_count=10):
+    return [io.BytesIO(b'{"prompt":"formatted chat"}'),
+            io.BytesIO(json.dumps({"tokens": [1] * token_count}).encode()),
+            response]
+
+
 class ChatReliabilityTests(unittest.TestCase):
+    def test_input_budget_blocks_generation_and_output_is_capped(self):
+        for count in [1000, 1001]:
+            with self.subTest(count=count):
+                response = io.BytesIO(b'{"choices":[{"message":{"content":"Hello"}}]}')
+                with patch.object(chat.urllib.request, "urlopen",
+                                  side_effect=counted_responses(response, count)) as send:
+                    result = chat.call_potato_agent([{"role": "user", "content": "Hello"}])
+                self.assertEqual(result["success"], count <= 1000)
+                if count <= 1000:
+                    payload = json.loads(send.call_args[0][0].data)
+                    self.assertEqual(payload["max_tokens"], 1000)
+                else:
+                    self.assertEqual(send.call_count, 2)
+                    self.assertIn("/reset", result["content"])
+
     def test_explicit_commands_take_priority_over_news(self):
         for prompt, expected in [
             ('read "news update.txt"', ("read_file", {"path": "news update.txt"})),
@@ -70,7 +91,7 @@ class ChatReliabilityTests(unittest.TestCase):
         ]:
             with self.subTest(message=message):
                 response = io.BytesIO(json.dumps({"choices": [{"message": message}]}).encode())
-                with patch.object(chat.urllib.request, "urlopen", return_value=response):
+                with patch.object(chat.urllib.request, "urlopen", side_effect=counted_responses(response)):
                     result = chat.call_potato_agent([{"role": "user", "content": "Hello"}])
                 self.assertNotIn("Private deliberation", result["content"])
         for message, expected in [
@@ -81,7 +102,7 @@ class ChatReliabilityTests(unittest.TestCase):
         ]:
             with self.subTest(message=message):
                 response = io.BytesIO(json.dumps({"choices": [{"message": message}]}).encode())
-                with patch.object(chat.urllib.request, "urlopen", return_value=response):
+                with patch.object(chat.urllib.request, "urlopen", side_effect=counted_responses(response)):
                     result = chat.call_potato_agent([{"role": "user", "content": "Hello"}])
                 self.assertEqual(result["content"], expected)
 
