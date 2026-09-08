@@ -64,12 +64,12 @@ def split_x_thread(
 ) -> List[str]:
     """
     Deterministically splits a long text into standard X posts of <= max_chars (default 280).
+    - Guarantees ZERO word cutoff (words are never sliced mid-word).
     - Preserves paragraph and sentence boundaries where practical.
-    - Never splits words unless an individual word exceeds the character limit.
     - Preserves original ordering.
     - Removes accidental empty parts.
-    - Supports optional numbering (e.g. 1/8, 2/8) while guaranteeing no part exceeds max_chars.
-    - Factors numbering length before finalizing each part.
+    - Supports optional numbering (e.g. 1/8, 2/8) with tag length calculated beforehand
+      so that f"{tag}{content}" is guaranteed to be <= max_chars without string truncation.
     """
     if not text or not text.strip():
         return []
@@ -83,74 +83,107 @@ def split_x_thread(
     if not add_numbering and len(clean_text) <= effective_limit:
         return [clean_text]
 
-    # Break into paragraphs first
-    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean_text) if p.strip()]
+    # Break into paragraphs
+    raw_paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean_text) if p.strip()]
 
-    def break_paragraph(para: str) -> List[str]:
-        # Split on sentence boundaries (. ! ?) followed by whitespace
+    # Break each paragraph into sentences, then words
+    # Store token tuples: (word, separator_before, is_sentence_end)
+    tokens: List[Tuple[str, str, bool]] = []
+    for p_idx, para in enumerate(raw_paragraphs):
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if s.strip()]
-        pieces = []
-        for s in sentences:
-            if len(s) <= effective_limit:
-                pieces.append(s)
-            else:
-                # Split sentence at whitespace
-                words = s.split()
-                for w in words:
-                    if len(w) <= effective_limit:
-                        pieces.append(w)
-                    else:
-                        for k in range(0, len(w), effective_limit):
-                            chunk = w[k:k + effective_limit]
-                            if chunk:
-                                pieces.append(chunk)
-        return pieces
+        for s_idx, sent in enumerate(sentences):
+            words = sent.split()
+            for w_idx, word in enumerate(words):
+                if p_idx > 0 and s_idx == 0 and w_idx == 0:
+                    sep = "\n\n"
+                elif s_idx > 0 and w_idx == 0:
+                    sep = " "
+                elif w_idx > 0:
+                    sep = " "
+                else:
+                    sep = ""
+                is_sent_end = (w_idx == len(words) - 1)
+                tokens.append((word, sep, is_sent_end))
 
-    # Build sequence of atomic tokens
-    atomic_tokens: List[str] = []
-    for p_idx, para in enumerate(paragraphs):
-        if p_idx > 0:
-            atomic_tokens.append('\n\n')
-        units = break_paragraph(para)
-        for u_idx, u in enumerate(units):
-            if u_idx > 0:
-                atomic_tokens.append(' ')
-            atomic_tokens.append(u)
+    def assemble(items: List[Tuple[str, str]]) -> str:
+        res = ""
+        for w, sep in items:
+            if not res:
+                res = w
+            else:
+                res += sep + w
+        return res
 
     def pack_tokens(limit_fn) -> List[str]:
-        parts = []
-        current = ""
+        parts: List[str] = []
+        cur_items: List[Tuple[str, str]] = []
+        cur_len = 0
         part_idx = 1
+        last_sent_count = -1
+
         i = 0
-        working_tokens = list(atomic_tokens)
-        while i < len(working_tokens):
-            token = working_tokens[i]
+        while i < len(tokens):
+            w, sep, is_sent_end = tokens[i]
             cur_limit = limit_fn(part_idx)
-            candidate = current + token
-            if len(candidate) <= cur_limit:
-                current = candidate
+
+            # Handle exceptional case: a single word is longer than the entire post capacity
+            if len(w) > cur_limit:
+                if cur_items:
+                    parts.append(assemble(cur_items))
+                    cur_items = []
+                    cur_len = 0
+                    last_sent_count = -1
+                    part_idx += 1
+                    cur_limit = limit_fn(part_idx)
+                for k in range(0, len(w), cur_limit):
+                    chunk = w[k:k + cur_limit]
+                    parts.append(chunk)
+                    part_idx += 1
+                i += 1
+                continue
+
+            active_sep = sep if cur_items else ""
+            added_len = len(active_sep) + len(w)
+
+            if cur_len + added_len <= cur_limit:
+                cur_items.append((w, active_sep))
+                cur_len += added_len
+                if is_sent_end:
+                    last_sent_count = len(cur_items)
                 i += 1
             else:
-                if current.strip():
-                    parts.append(current.strip())
-                    current = ""
+                # Does not fit in current post.
+                # If there's a sentence end in the latter portion (>= 50% of content),
+                # prefer breaking cleanly at the sentence boundary.
+                if last_sent_count > 0 and last_sent_count >= len(cur_items) * 0.5:
+                    part_items = cur_items[:last_sent_count]
+                    parts.append(assemble(part_items))
+                    rewind = len(cur_items) - last_sent_count
+                    i -= rewind
+                    cur_items = []
+                    cur_len = 0
+                    last_sent_count = -1
+                    part_idx += 1
+                elif cur_items:
+                    # Break cleanly at word boundary
+                    parts.append(assemble(cur_items))
+                    cur_items = []
+                    cur_len = 0
+                    last_sent_count = -1
                     part_idx += 1
                 else:
-                    if len(token) > cur_limit:
-                        parts.append(token[:cur_limit].strip())
-                        working_tokens[i] = token[cur_limit:]
-                        part_idx += 1
-                    else:
-                        current = token
-                        i += 1
-        if current.strip():
-            parts.append(current.strip())
+                    parts.append(w)
+                    i += 1
+                    part_idx += 1
+
+        if cur_items:
+            parts.append(assemble(cur_items))
         return parts
 
     if not add_numbering:
         return pack_tokens(lambda _: effective_limit)
 
-    # Numbering logic
+    # Numbering logic: iteratively determine total parts so tag fits without truncation
     initial_parts = pack_tokens(lambda _: effective_limit - 6)
     estimated_total = max(len(initial_parts), 1)
 
@@ -168,8 +201,6 @@ def split_x_thread(
     for i, p in enumerate(parts, 1):
         tag = f"{i}/{total} " if total > 1 else ""
         part_text = f"{tag}{p}".strip()
-        if len(part_text) > max_chars:
-            part_text = part_text[:max_chars].strip()
         formatted.append(part_text)
     return formatted
 

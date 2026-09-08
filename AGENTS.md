@@ -122,9 +122,12 @@ python scripts\test_potato_core.py
 
 # 2. V2 Integration Test Suite (18 Tests)
 python scripts\test_potato_v2.py
+
+# 3. Autonomous Browser Agent & Thread Splitter Test Suite (18 Tests)
+python scripts\test_potato_browser_agent.py
 ```
 
-**Target**: **66/66 Tests Passing (0 Failures, 0 Errors)**.
+**Target**: **84/84 Tests Passing (0 Failures, 0 Errors)**.
 
 If live model verification is required:
 ```powershell

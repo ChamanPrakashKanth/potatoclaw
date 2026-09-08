@@ -85,8 +85,10 @@ SPAM_KEYWORDS = [
 def clean_html_tags(text):
     if not text:
         return ""
-    clean = re.sub(r'<[^>]+>', '', text)
-    clean = clean.replace('&quot;', '"').replace('&amp;', '&').replace('&apos;', "'").replace('&#39;', "'").replace('&nbsp;', ' ')
+    import html
+    clean = html.unescape(text)
+    clean = re.sub(r'<[^>]+>', '', clean)
+    clean = clean.replace('&nbsp;', ' ').replace('\xa0', ' ')
     return clean.strip()
 
 def is_spam(title, desc):
@@ -94,6 +96,8 @@ def is_spam(title, desc):
     return any(k in combined for k in SPAM_KEYWORDS)
 
 def fetch_category_news(category, max_items=5):
+    import ssl
+    ssl_ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
     sources = FEEDS.get(category.lower(), [])
     all_articles = []
 
@@ -102,7 +106,7 @@ def fetch_category_news(category, max_items=5):
             req = urllib.request.Request(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
             })
-            with urllib.request.urlopen(req, timeout=6) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as resp:
                 tree = ET.fromstring(resp.read())
                 items = tree.findall('.//item')
                 for item in items:
@@ -111,8 +115,17 @@ def fetch_category_news(category, max_items=5):
                     desc_elem = item.find('description')
 
                     title = clean_html_tags(title_elem.text) if title_elem is not None and title_elem.text else ""
-                    link = link_elem.text.strip() if link_elem is not None and link_elem.text else ""
-                    desc = clean_html_tags(desc_elem.text)[:250] if desc_elem is not None and desc_elem.text else ""
+                    link = clean_html_tags(link_elem.text) if link_elem is not None and link_elem.text else ""
+                    raw_desc = clean_html_tags(desc_elem.text) if desc_elem is not None and desc_elem.text else ""
+                    if len(raw_desc) > 350:
+                        matches = list(re.finditer(r'[.!?](?=\s|$)', raw_desc[:350]))
+                        if matches and matches[-1].end() > 80:
+                            desc = raw_desc[:matches[-1].end()].strip()
+                        else:
+                            desc = raw_desc[:350].rsplit(' ', 1)[0].rstrip(' ,;:-') + "."
+                    else:
+                        desc = raw_desc
+                    desc = desc.rstrip('. \t\n') + '.' if desc and not desc.endswith(('.', '!', '?')) else desc
 
                     if not title or len(title) < 15 or is_spam(title, desc):
                         continue

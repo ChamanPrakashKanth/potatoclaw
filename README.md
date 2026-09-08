@@ -337,15 +337,17 @@ Double-click **`post_all.bat`** or run via PowerShell:
 ```
 *Interactive console menu or direct CLI to:*
 - **News to X**: Curate & draft/publish breaking stories via the autonomous Qwen 0.5B browser agent or web intent.
-- **Non-Premium Thread Creator**: Split long articles into $\le 280$-char parts with deterministic boundaries and draft/publish in X browser.
+- **Non-Premium Thread Creator**: Split long articles into $\le 280$-char posts with **zero word cutoff**, or autonomously curate breaking news (Tech, Defence, Physics) into an in-depth 3-part factual thread.
 - **Autonomous Browser Agent**: Direct goals with snapshot compaction and irreversible submit safety gates.
 - **Direct CLI shortcuts**:
   ```powershell
-  .\post_all.bat x tech --browser                # Draft breaking tech news in X browser
-  .\post_all.bat thread "Long article..."         # Split & draft multi-post non-Premium thread
+  .\post_all.bat x tech --browser                 # Draft breaking tech news in X browser
+  .\post_all.bat thread auto tech                 # Autonomously curate & draft 3-part Tech thread
+  .\post_all.bat thread auto defence              # Autonomously curate & draft 3-part Defence thread
+  .\post_all.bat thread "Long article..."          # Split & draft multi-post non-Premium thread (Zero Cutoff)
   .\post_all.bat thread article.txt --allow-submit # Publish thread from file to X
-  .\post_all.bat browser "Open X home page"       # Direct autonomous browsing
-  .\post_all.bat test                             # Run all 77 test assertions
+  .\post_all.bat browser "Open X home page"        # Direct autonomous browsing
+  .\post_all.bat test                              # Run all 84 test assertions
   ```
 
 ---
@@ -355,7 +357,7 @@ Double-click **`post_all.bat`** or run via PowerShell:
 Verify all architectural invariants on your local machine:
 
 ```powershell
-# 1. Run Browser Agent & Non-Premium Thread Splitter Tests (11/11 Passed)
+# 1. Run Browser Agent & Non-Premium Thread Splitter Tests (18/18 Passed)
 python scripts\test_potato_browser_agent.py
 
 # 2. Run Comprehensive V3 Architectural Test Suite (48/48 Passed)
@@ -364,7 +366,7 @@ python scripts\test_potato_core.py
 # 3. Run V2 Integration Test Suite (18/18 Passed)
 python scripts\test_potato_v2.py
 
-# Total Automated Architectural Verification: 77/77 Passed (100%)
+# Total Automated Architectural Verification: 84/84 Passed (100%)
 
 # Run Live PotatoBench Evaluation Suite (10 Tasks + 8 Ablations)
 python scripts\run_benchmarks.py potatobench

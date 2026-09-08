@@ -136,6 +136,17 @@ class TestPotatoXThreadSplitter(unittest.TestCase):
         for p in parts:
             self.assertLessEqual(len(p), 75)
 
+    def test_zero_word_cutoff(self):
+        lead = "Short lead. "
+        s = "This is a single sentence whose length is ninety-eight characters long and contains important words"
+        parts = split_x_thread(lead + s, max_chars=100, add_numbering=True)
+        for p in parts:
+            words = p.split()[1:]  # skip numbering tag
+            for w in words:
+                self.assertIn(w, (lead + s).split())
+        self.assertTrue(any("important" in p for p in parts))
+        self.assertTrue(any("words" in p for p in parts))
+
     def test_empty_and_whitespace(self):
         self.assertEqual(split_x_thread(""), [])
         self.assertEqual(split_x_thread("   \n\n  \t "), [])
