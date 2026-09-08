@@ -9,6 +9,9 @@ echo   Spark-X2.5-4B (11435) ^| Qwen2.5-0.5B (11436) ^| CDP Browser
 echo ======================================================================
 echo.
 
+:: 0. Enforce Zero-Cache Rule (Every start is fresh)
+set PYTHONDONTWRITEBYTECODE=1
+
 :: 1. Check Python
 set "PYTHON_EXE=C:\Program Files\Python38\python.exe"
 if not exist "%PYTHON_EXE%" (

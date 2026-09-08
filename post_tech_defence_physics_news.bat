@@ -8,6 +8,9 @@ echo   POTATOCLAW X-ENGINE: TECH, DEFENCE ^& PHYSICS NEWS POSTER
 echo ======================================================================
 echo.
 
+:: 0. Enforce Zero-Cache Rule (Every start is fresh)
+set PYTHONDONTWRITEBYTECODE=1
+
 :: 1. Check Python
 set "PYTHON_EXE=C:\Program Files\Python38\python.exe"
 if not exist "%PYTHON_EXE%" (

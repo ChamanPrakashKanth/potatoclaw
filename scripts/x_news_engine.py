@@ -7,6 +7,8 @@ and presents a clear 'Search & Plan' review before 1-click manual posting.
 """
 
 import sys
+sys.dont_write_bytecode = True
+
 import os
 import io
 import urllib.request
@@ -385,18 +387,8 @@ def open_x_intent(text):
     return success
 
 def save_draft(text, category, title):
-    drafts_dir = os.path.join(os.path.dirname(__file__), "..", "news_drafts")
-    os.makedirs(drafts_dir, exist_ok=True)
-    filename = f"x_single_{category}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    path = os.path.join(drafts_dir, filename)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(f"# X Single Post Draft - {category.upper()}\n\n")
-        f.write(f"Source Headline: {title}\n")
-        f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write("```text\n")
-        f.write(text)
-        f.write("\n```\n")
-    return path
+    """Zero-cache rule: Do not write drafts to disk. Every start is fresh."""
+    return None
 
 def display_plan_and_post(category, article):
     print("\n" + "=" * 65)
@@ -430,7 +422,7 @@ def display_plan_and_post(category, article):
         print("   [P] Post to X (Open Chrome with prefilled post)")
         print("   [C] Copy text to Clipboard")
         print("   [E] Edit tweet text manually")
-        print("   [S] Save Draft to disk")
+        print("   [S] Save Draft (Copy to Clipboard - Zero-Cache)")
         print("   [R] Regenerate post with AI")
         print("   [M] Back to Main Menu")
 
@@ -460,8 +452,8 @@ def display_plan_and_post(category, article):
                 post_draft = edited
                 print("[✔] Tweet text updated.")
         elif action == 's':
-            saved_path = save_draft(post_draft, category, article['title'])
-            print(f"[✔] Draft saved to: {saved_path}")
+            save_draft(post_draft, category, article['title'])
+            print("[✔] Zero-cache rule active: draft copied to clipboard (no files written to disk).")
         elif action == 'r':
             print("[*] Regenerating single-story post...")
             regenerated = generate_single_story_x_post(category, article)

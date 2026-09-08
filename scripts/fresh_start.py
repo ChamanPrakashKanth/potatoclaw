@@ -6,6 +6,8 @@ and resets local LLM KV memory slot cache before every new run.
 """
 
 import sys
+sys.dont_write_bytecode = True
+
 import os
 import io
 import shutil
@@ -25,6 +27,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DRAFTS_DIR = os.path.join(ROOT_DIR, "news_drafts")
 MEDIA_DIR = os.path.join(ROOT_DIR, "media_output")
 SPARK_API_URL = "http://127.0.0.1:11435"
+QWEN_API_URL = "http://127.0.0.1:11436"
 
 def clean_directory(dir_path, label=""):
     """Removes all files inside a directory without deleting the directory itself."""
@@ -50,9 +53,10 @@ def clean_directory(dir_path, label=""):
     return count
 
 def clean_pycache():
-    """Fast pycache cleaner targeting only scripts and tests (skipping node_modules)."""
+    """Fast pycache cleaner targeting scripts, src, benchmarks and root (skipping node_modules and .git)."""
     count = 0
     target_dirs = [
+        ROOT_DIR,
         os.path.join(ROOT_DIR, "scripts"),
         os.path.join(ROOT_DIR, "src"),
         os.path.join(ROOT_DIR, "benchmarks")
@@ -60,6 +64,10 @@ def clean_pycache():
     for target in target_dirs:
         if os.path.exists(target):
             for root, dirs, files in os.walk(target):
+                if "node_modules" in dirs:
+                    dirs.remove("node_modules")
+                if ".git" in dirs:
+                    dirs.remove(".git")
                 for d in list(dirs):
                     if d == "__pycache__":
                         try:
@@ -68,18 +76,26 @@ def clean_pycache():
                             count += 1
                         except Exception:
                             pass
+                for f in files:
+                    if f.endswith((".pyc", ".pyo")):
+                        try:
+                            os.unlink(os.path.join(root, f))
+                            count += 1
+                        except Exception:
+                            pass
     return count
 
 def reset_llama_server_kv_cache():
-    """Signals local llama-server to release all cached slots and reset context."""
-    try:
-        url = f"{SPARK_API_URL}/slots/0?action=release"
-        req = urllib.request.Request(url, data=b"", headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=1) as resp:
-            return True
-    except Exception:
-        pass
-    return False
+    """Signals local llama-servers (Spark & Qwen) to release all cached slots and reset context."""
+    for api_url in [SPARK_API_URL, QWEN_API_URL]:
+        try:
+            url = f"{api_url}/slots/0?action=release"
+            req = urllib.request.Request(url, data=b"", headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=1) as resp:
+                pass
+        except Exception:
+            pass
+    return True
 
 def purge_all_caches(verbose=True):
     if verbose:

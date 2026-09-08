@@ -15,6 +15,7 @@
 #>
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONDONTWRITEBYTECODE = "1"
 
 $PythonExe = "C:\Program Files\Python38\python.exe"
 if (-not (Test-Path $PythonExe)) {

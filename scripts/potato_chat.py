@@ -11,6 +11,8 @@ Powered by Spark-X2.5-4B + Full PotatoClaw V3 Architecture:
 """
 
 import sys
+sys.dont_write_bytecode = True
+
 import os
 import io
 import time
@@ -434,6 +436,7 @@ def get_system_stats():
 
 # --- Interactive Chat Loop with Rule Zero & V3 Architecture ---
 def run_interactive_chat():
+    purge_all_caches(verbose=False)
     bwm = BoundedWorkingMemory(max_total_chars=850)
     verifier = DeterministicVerifier()
     failure_store = FailureMemoryStore()

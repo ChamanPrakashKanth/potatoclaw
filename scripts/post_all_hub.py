@@ -6,6 +6,8 @@ and Deterministic Non-Premium X Thread Splitter to X (Twitter) posting workflows
 """
 
 import sys
+sys.dont_write_bytecode = True
+
 import os
 import io
 import time
@@ -95,7 +97,6 @@ def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_
             print("[!] Draft exceeds 280 characters. Please shorten it and try again.")
             return None
     
-    draft_file = x_save_draft(post_text, category, article['title'])
     x_copy_to_clipboard(post_text)
     
     print("\n" + "=" * 65)
@@ -105,8 +106,6 @@ def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_
     print("=" * 65)
     print(f" [✔] X weighted character count: {x_character_count(post_text)} / 280")
     print(f" [✔] Post text copied to Windows clipboard!")
-    if draft_file:
-        print(f" [✔] Draft saved to: {draft_file}")
 
     if browser_mode == "agent":
         if run_browser_agent:
