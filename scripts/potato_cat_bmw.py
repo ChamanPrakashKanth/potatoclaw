@@ -92,6 +92,11 @@ class ConceptGraphMemory:
         self.edges: Dict[str, Set[str]] = {}
         self.index: Dict[str, Set[str]] = {}
 
+    @property
+    def nodes(self) -> Dict[str, Concept]:
+        """Compatibility view for the core PotatoAgent integration."""
+        return self.concepts
+
     def insert(
         self,
         concept_id: str,
@@ -118,6 +123,33 @@ class ConceptGraphMemory:
             self.index.setdefault(term, set()).add(concept_id)
         return concept_id
 
+    def add_observation(
+        self,
+        content: str,
+        *,
+        importance: float = 0.5,
+        decay_rate: float = 0.01,
+        protected: bool = False,
+        concept_id: Optional[str] = None,
+        relations: Iterable[str] = (),
+    ) -> str:
+        """Accept the core-agent observation contract without rebuilding indexes."""
+        del decay_rate  # This implementation uses one bounded half-life per memory.
+        concept_id = concept_id or "concept_%05d" % (len(self.concepts) + 1)
+        if concept_id in self.concepts:
+            concept = self.concepts[concept_id]
+            concept.content = content.strip()
+            concept.importance = max(concept.importance, min(1.0, importance))
+            concept.protected = concept.protected or protected
+            for term in _terms(content):
+                self.index.setdefault(term, set()).add(concept_id)
+        else:
+            self.insert(concept_id, content, importance=importance, protected=protected)
+        for related_id in relations:
+            if related_id in self.concepts:
+                self.link(concept_id, related_id)
+        return concept_id
+
     def link(self, left_id: str, right_id: str) -> None:
         if left_id not in self.concepts or right_id not in self.concepts:
             raise KeyError("both graph endpoints must exist")
@@ -127,10 +159,18 @@ class ConceptGraphMemory:
     def age(self, concept_id: str, seconds: float) -> None:
         self.concepts[concept_id].last_access -= max(0.0, seconds)
 
-    def reinforce(self, concept_ids: Iterable[str], amount: float = 0.1) -> None:
+    def reinforce(
+        self,
+        concept_ids: Iterable[str],
+        amount: float = 0.1,
+        success: Optional[bool] = None,
+    ) -> None:
         for concept_id in concept_ids:
             concept = self.concepts.get(concept_id)
             if concept is None:
+                continue
+            if success is False:
+                concept.last_access = time.time()
                 continue
             concept.success_count += 1
             concept.importance = min(1.0, concept.importance + amount)
@@ -222,6 +262,38 @@ class ConceptGraphMemory:
             record_id = self.concepts[concept_id].source_record_id
             lines.append("- %s=%s" % (record_id, self.records[record_id].content))
         return "\n".join(lines)
+
+    def serialize(
+        self,
+        query: str,
+        limit: Optional[int] = None,
+        include_raw: bool = False,
+    ) -> Tuple[str, Dict[str, object]]:
+        """Serialize bounded graph context for the core PotatoAgent contract."""
+        requested_limit = max(1, limit or self.active_limit)
+        retrieval = self.retrieve(query, use_decay=True, exact_detail=include_raw)
+        if len(retrieval.active_ids) > requested_limit:
+            retrieval = Retrieval(
+                active_ids=retrieval.active_ids[:requested_limit],
+                candidate_ids=retrieval.candidate_ids,
+                scanned_nodes=retrieval.scanned_nodes,
+                scan_mode=retrieval.scan_mode,
+                selection_latency_ms=retrieval.selection_latency_ms,
+                raw_fallback_ids=retrieval.raw_fallback_ids[:requested_limit],
+            )
+        block = self.render_active(retrieval)
+        if include_raw:
+            raw_block = self.render_raw_fallback(retrieval)
+            if raw_block:
+                block += "\n" + raw_block
+        return block, {
+            "active_nodes": len(retrieval.active_ids),
+            "prompt_tokens": estimate_tokens(block),
+            "raw_fallback": bool(include_raw and retrieval.raw_fallback_ids),
+            "selection_candidates": len(retrieval.candidate_ids),
+            "selection_scanned": retrieval.scanned_nodes,
+            "selection_fallback_scan": retrieval.scan_mode == "full_fallback",
+        }
 
 
 class BmwGraphBridge:

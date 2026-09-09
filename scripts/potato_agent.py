@@ -22,6 +22,7 @@ from potato_compiler import ObservationCompiler, ContextCompiler, CompactObserva
 from potato_verifier import DeterministicVerifier, VerificationResult
 from potato_failure_memory import FailureMemoryStore, LoopDetector, DynamicToolRouter
 from potato_chat import intercept_direct_action, extract_tool_call, normalize_tool_call, execute_tool
+from potato_cat_bmw import ConceptGraphMemory
 
 SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
 DEFAULT_MODEL = "spark-x2.5-4b:latest"
@@ -49,6 +50,11 @@ class PotatoAgent:
         self.loop_detector = LoopDetector(max_identical_repeats=3, max_oscillations=2)
         self.context_compiler = ContextCompiler(max_context_chars=context_budget_chars)
         self.verifier = DeterministicVerifier()
+        # Opt-in prototype. The default path remains byte-for-byte unchanged.
+        self.bmw_graph_enabled = os.getenv("BMW_GRAPH_MEMORY", "0") == "1"
+        self.cat_memory = ConceptGraphMemory(
+            active_limit=int(os.getenv("BMW_GRAPH_ACTIVE_LIMIT", "32"))
+        ) if self.bmw_graph_enabled else None
 
         # Metrics tracking
         self.metrics = {
@@ -74,6 +80,12 @@ class PotatoAgent:
         # Seed protected constraints
         for constraint in self.critical_constraints:
             self.memory.l1_bwm.add_protected_fact(f"Constraint: {constraint}")
+            if self.cat_memory:
+                self.cat_memory.add_observation(
+                    f"Constraint: {constraint}", importance=1.0,
+                    decay_rate=0.0001, protected=True,
+                    concept_id=f"constraint_{len(self.cat_memory.nodes)}"
+                )
 
     # ------------------------------------------------------------
     # LLM Inference Call
@@ -258,7 +270,15 @@ class PotatoAgent:
 
         # Context Compiler (Phase 11)
         local_block = self.graph.format_local_prompt_block(node.id)
-        bwm_block = self.memory.l1_bwm.format_prompt_block(current_node_id=node.id)
+        if self.cat_memory:
+            bwm_block, cat_stats = self.cat_memory.serialize(
+                f"{self.goal} {node.description}",
+                limit=self.cat_memory.active_limit,
+            )
+            self.metrics["cat_active_nodes"] = cat_stats["active_nodes"]
+            self.metrics["cat_prompt_tokens"] = cat_stats["prompt_tokens"]
+        else:
+            bwm_block = self.memory.l1_bwm.format_prompt_block(current_node_id=node.id)
         fail_block = self.failure_store.format_failure_prompt_block(node.id)
         
         messages, stats = self.context_compiler.compile_context(
@@ -339,6 +359,12 @@ class PotatoAgent:
         self.metrics["deterministic_verifications"] += 1
         node.result = observation[:600]
         if not verified:
+            if self.cat_memory:
+                self.cat_memory.add_observation(
+                    f"Failure {node.id}: {node.result[:180]}",
+                    importance=0.80, decay_rate=0.0005,
+                    concept_id=f"failure_{node.id}_{self.metrics['tool_calls']}",
+                )
             self.failure_store.record_failure(node.id, action, node.result)
             raise ValueError(node.result)
         node.status = NodeStatus.COMPLETE
@@ -346,6 +372,14 @@ class PotatoAgent:
 
         # Promote findings to BWM
         self.memory.promote_to_l1(f"Completed {node.id}: {node.result[:80]}", current_node_id=node.id)
+        if self.cat_memory:
+            cid = self.cat_memory.add_observation(
+                f"Completed {node.id}: {node.result[:180]}",
+                importance=0.65 if verified else 0.35,
+                decay_rate=0.01 if verified else 0.04,
+                concept_id=f"result_{node.id}_{self.metrics['tool_calls']}",
+            )
+            self.cat_memory.reinforce([cid], success=verified)
         return True
 
     # ------------------------------------------------------------

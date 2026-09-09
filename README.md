@@ -47,6 +47,7 @@
   - [9. Potential Research Applications: Industrial Edge & Diagnostics](#9-potential-research-applications-industrial-edge--diagnostics-exploratory--non-safety-critical)
 - [⚡ Empirical Evaluation: PotatoBench 10-Task Research Suite](#-empirical-evaluation-potatobench-10-task-research-suite)
 - [🏗️ PotatoClaw V3 Modular Architecture](#️-potatoclaw-v3-modular-architecture)
+- [🧠 Experimental CAT Graph + BMW Memory](#-experimental-cat-graph--bwm-memory)
 - [🥊 Architectural Comparison: Cloud-First Frameworks vs PotatoClaw](#-architectural-comparison-cloud-first-frameworks-vs-potatoclaw)
 - [💻 Hardware & Model Specifications](#-hardware--model-specifications)
 - [🚀 Quick Start & 1-Click Launchers](#-quick-start--1-click-launchers)
@@ -319,7 +320,7 @@ graph TD
 ```
 *Both servers run locally inside WSL2 with hard context caps ($\le 2048$ tokens) and single-slot Flash Attention.*
 
-### CATV3 Concept Graph + BMW Experiment
+### 🧠 Experimental CAT Graph + BMW Memory
 
 The CATV3/BMW experiment is an explicit research harness in [`scripts/potato_cat_bmw.py`](scripts/potato_cat_bmw.py) and [`scripts/test_cat_bmw_smoke.py`](scripts/test_cat_bmw_smoke.py). It does not change the normal PotatoClaw agent path. `BMW_GRAPH_MEMORY` defaults to `0`; set it to `1` when recording an opt-in graph-memory run:
 
