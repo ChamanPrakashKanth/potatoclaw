@@ -71,7 +71,8 @@ def split_x_thread(
     text: str,
     max_chars: int = 280,
     add_numbering: bool = False,
-    safety_margin: int = 0
+    safety_margin: int = 0,
+    preserve_paragraphs: bool = False,
 ) -> List[str]:
     """
     Deterministically splits a long text into standard X posts of <= max_chars (default 280).
@@ -81,6 +82,7 @@ def split_x_thread(
     - Removes accidental empty parts.
     - Supports optional numbering (e.g. 1/8, 2/8) with tag length calculated beforehand
       so that f"{tag}{content}" is guaranteed to be <= max_chars without string truncation.
+    - Optionally keeps explicit paragraphs as separate thread posts when each fits.
     """
     if not text or not text.strip():
         return []
@@ -96,6 +98,34 @@ def split_x_thread(
 
     # Break into paragraphs
     raw_paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean_text) if p.strip()]
+
+    if preserve_paragraphs and len(raw_paragraphs) > 1:
+        def split_paragraphs(paragraph_limit: int) -> List[str]:
+            paragraph_parts: List[str] = []
+            for paragraph in raw_paragraphs:
+                paragraph_parts.extend(split_x_thread(
+                    paragraph,
+                    max_chars=max(1, paragraph_limit),
+                    add_numbering=False,
+                ))
+            return paragraph_parts
+
+        content_limit = effective_limit - (6 if add_numbering else 0)
+        parts = split_paragraphs(max(1, content_limit))
+        if add_numbering:
+            for _ in range(3):
+                total = max(1, len(parts))
+                numbered_limit = effective_limit - len(f"{total}/{total} ")
+                updated = split_paragraphs(max(1, numbered_limit))
+                parts = updated
+                if len(updated) == total:
+                    break
+            total = len(parts)
+            return [
+                f"{index}/{total} {part}" if total > 1 else part
+                for index, part in enumerate(parts, 1)
+            ]
+        return parts
 
     # Break each paragraph into sentences, then words
     # Store token tuples: (word, separator_before, is_sentence_end)
@@ -642,7 +672,12 @@ def run_browser_agent(
     # 2. X Posting & Thread Fast-Path (0.05s response, zero hang)
     if extracted_text:
         should_split = is_thread or len(extracted_text) > 280
-        thread_parts = split_x_thread(extracted_text, max_chars=280, add_numbering=should_split)
+        thread_parts = split_x_thread(
+            extracted_text,
+            max_chars=280,
+            add_numbering=should_split,
+            preserve_paragraphs=is_thread,
+        )
         thread_state = BrowserThreadState(thread_parts) if is_thread else None
         print(f"[PotatoBrowserAgent] Extracted {len(thread_parts)} post part(s) (Zero Word Cutoff).")
         for idx, part in enumerate(thread_parts, 1):

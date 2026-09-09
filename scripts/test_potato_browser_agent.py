@@ -112,6 +112,11 @@ class TestPotatoXThreadSplitter(unittest.TestCase):
         for p in parts:
             self.assertLessEqual(len(p), 120)
 
+    def test_numbered_thread_preserves_short_explicit_paragraphs(self):
+        text = "First update.\n\nSecond update.\n\nThird update."
+        parts = split_x_thread(text, max_chars=280, add_numbering=True, preserve_paragraphs=True)
+        self.assertEqual(parts, ["1/3 First update.", "2/3 Second update.", "3/3 Third update."])
+
     def test_very_long_sentence(self):
         long_sentence = (
             "This is an exceptionally long and continuous sentence engineered to test how the deterministic "

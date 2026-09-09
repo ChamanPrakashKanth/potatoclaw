@@ -8,6 +8,7 @@ from unittest.mock import patch
 import potato_cat_bmw as bmw
 import potato_chat as chat
 import post_all_hub as hub
+from potato_browser_agent import split_x_thread
 
 
 class FakeRetrieval:
@@ -109,6 +110,19 @@ class CatBmwIntegrationTests(unittest.TestCase):
             [event["label"] for event in RecordingBridge.instances[0].events[:2]],
             ["x_article", "x_post_draft"],
         )
+
+    def test_curated_thread_drops_source_link_boilerplate_and_keeps_three_posts(self):
+        article = {
+            "title": "DRDO Seeks New Upgrades for ASPJ Electronic Warfare Pod",
+            "source": "IDRW (Indian Defence)",
+            "desc": "This article was originally published on idrw.org.",
+        }
+        text = hub.craft_in_depth_news_thread("defence", article)
+        parts = split_x_thread(text, max_chars=280, add_numbering=True, preserve_paragraphs=True)
+
+        self.assertEqual(len(parts), 3)
+        self.assertNotIn("idrw.org", text.lower())
+        self.assertTrue(parts[1].startswith("2/3 "))
 
 
 if __name__ == "__main__":

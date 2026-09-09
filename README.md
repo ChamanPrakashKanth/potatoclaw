@@ -377,7 +377,7 @@ Double-click **`post_all.bat`** or run via PowerShell:
   .\post_all.bat thread "Long article..."          # Split & draft multi-post non-Premium thread (Zero Cutoff)
   .\post_all.bat thread article.txt --allow-submit # Publish thread from file to X
   .\post_all.bat browser "Open X home page"        # Direct autonomous browsing
-  .\post_all.bat test                              # Run core + CAT/BMW integration (102 assertions)
+  .\post_all.bat test                              # Run core + CAT/BMW integration (104 assertions)
   ```
 
 ---
@@ -393,17 +393,17 @@ python scripts\test_potato_core.py
 # 2. Run V2 Integration Test Suite (18/18 Passed)
 python scripts\test_potato_v2.py
 
-# 3. Run Browser Agent & Non-Premium Thread Splitter Tests (22/22 Passed)
+# 3. Run Browser Agent & Non-Premium Thread Splitter Tests (23/23 Passed)
 python scripts\test_potato_browser_agent.py
 
 # 4. Run Zero-Dependency Chrome CDP Engine Tests (10/10 Passed)
 python scripts\test_potato_cdp.py
 
-# 5. Verify the CAT/BMW chat + X integration boundaries (4/4 Passed)
+# 5. Verify the CAT/BMW chat + X integration boundaries (5/5 Passed)
 python scripts\test_cat_bmw_integration.py
 
-# Total core-suite verification: 98/98 Passed (100%)
-# Total including CAT/BMW integration boundaries: 102/102 Passed
+# Total core-suite verification: 99/99 Passed (100%)
+# Total including CAT/BMW integration boundaries: 104/104 Passed
 
 # Run Live PotatoBench Evaluation Suite (10 Tasks + 8 Ablations)
 python scripts\run_benchmarks.py potatobench

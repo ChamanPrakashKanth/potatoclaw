@@ -222,6 +222,13 @@ def craft_in_depth_news_thread(category: str, article: dict) -> str:
     """
     title = clean_html_tags(article.get('title', '').strip())
     raw_desc = clean_html_tags(article.get('desc', '').strip())
+    raw_desc = re.sub(
+        r'(?is)\bthis article\s+(?:was\s+)?originally published on\b[^.!?]*(?:[.!?]|$)',
+        '',
+        raw_desc,
+    )
+    raw_desc = re.sub(r'(?i)(?:https?://|www\.)\S+|\b[\w-]+\.(?:org|com|net|in)(?:/\S*)?', '', raw_desc)
+    raw_desc = re.sub(r'\s+', ' ', raw_desc).strip(' .,:;-')
     source = article.get('source', '').strip()
 
     # Part 1: Core development
@@ -348,7 +355,12 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
         return
 
     if split_x_thread:
-        parts = split_x_thread(text, max_chars=280, add_numbering=add_num)
+        parts = split_x_thread(
+            text,
+            max_chars=280,
+            add_numbering=add_num,
+            preserve_paragraphs=add_num,
+        )
     else:
         parts = [text[i:i+280] for i in range(0, len(text), 280)]
 
