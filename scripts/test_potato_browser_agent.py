@@ -16,6 +16,21 @@ from potato_browser_agent import split_x_thread, BrowserThreadState
 
 
 class BrowserPolicyTests(unittest.TestCase):
+    def test_thread_uses_cdp_launcher_and_preserves_failure(self):
+        for status in ("PREPARED_SAFE", "SUBMIT_UNVERIFIED", "CDP_NOT_AVAILABLE"):
+            with self.subTest(status=status), patch.object(
+                browser, "compose_x_thread_cdp", return_value={"status": status}
+            ) as compose, patch.object(browser, "open_url_direct") as intent:
+                result = browser.run_browser_agent(
+                    "Post this on X as a non-Premium thread: First update.\n\nSecond update.",
+                    allow_submit=True,
+                )
+                self.assertEqual(result["status"], status)
+                compose.assert_called_once_with(
+                    ["1/2 First update.", "2/2 Second update."], allow_submit=True
+                )
+                intent.assert_not_called()
+
     def test_extracts_json_from_fence(self):
         obj = browser._extract_object('```json\n{"action":"click","ref":"e12"}\n```')
         self.assertEqual(obj, {"action": "click", "ref": "e12"})

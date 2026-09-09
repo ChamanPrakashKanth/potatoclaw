@@ -115,13 +115,16 @@ class CatBmwIntegrationTests(unittest.TestCase):
         article = {
             "title": "DRDO Seeks New Upgrades for ASPJ Electronic Warfare Pod",
             "source": "IDRW (Indian Defence)",
-            "desc": "This article was originally published on idrw.org.",
+            "desc": "This article was originally published on idrw.org. DRDO has issued a procurement tender for components. Read the full article on : DRDO Seeks New Upgrades.",
         }
         text = hub.craft_in_depth_news_thread("defence", article)
         parts = split_x_thread(text, max_chars=280, add_numbering=True, preserve_paragraphs=True)
 
         self.assertEqual(len(parts), 3)
         self.assertNotIn("idrw.org", text.lower())
+        self.assertNotIn("org.", text)
+        self.assertNotIn("Read the full article", text)
+        self.assertIn("procurement tender", text)
         self.assertTrue(parts[1].startswith("2/3 "))
 
 

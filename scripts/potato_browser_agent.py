@@ -684,14 +684,18 @@ def run_browser_agent(
             print(f"   [Part {idx}/{len(thread_parts)}] ({len(part)} chars): {part[:60]}...")
 
         # A. If Chrome CDP is active on port 9222/9223, use automated multi-box composition
-        if compose_x_thread_cdp and is_cdp_listening:
-            active_port = 9222 if is_cdp_listening(9222) else (9223 if is_cdp_listening(9223) else None)
-            if active_port:
-                print(f"[*] Detected active Chrome/Edge CDP on port {active_port}. Starting automated thread typing...")
-                cdp_res = compose_x_thread_cdp(thread_parts, allow_submit=allow_submit, port=active_port)
-                if cdp_res.get("status") in ["PREPARED_SAFE", "SUBMITTED"]:
-                    return cdp_res
-                print(f"[PotatoBrowserAgent] Note: CDP composition returned {cdp_res.get('status')}; falling back to intent URL.")
+        if compose_x_thread_cdp:
+            print("[*] Connecting to or launching the CDP browser to compose every post...")
+            cdp_res = compose_x_thread_cdp(thread_parts, allow_submit=allow_submit)
+            print(f"[PotatoBrowserAgent] {cdp_res.get('status')}: {cdp_res.get('message', '')}")
+            return cdp_res
+
+        if len(thread_parts) > 1 or allow_submit:
+            return {
+                "status": "CDP_NOT_AVAILABLE",
+                "message": "Automatic posting requires potato_cdp. Start start_chrome_cdp.bat, sign in to X in that browser, and retry.",
+                "parts": len(thread_parts),
+            }
 
         # B. Fallback: Open X composer, copy 1-click console script & text to Windows clipboard
         encoded_part1 = urllib.parse.quote(thread_parts[0])

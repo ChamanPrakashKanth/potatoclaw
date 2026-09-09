@@ -223,16 +223,17 @@ def craft_in_depth_news_thread(category: str, article: dict) -> str:
     title = clean_html_tags(article.get('title', '').strip())
     raw_desc = clean_html_tags(article.get('desc', '').strip())
     raw_desc = re.sub(
-        r'(?is)\bthis article\s+(?:was\s+)?originally published on\b[^.!?]*(?:[.!?]|$)',
+        r'(?i)\bthis article\s+(?:was\s+)?originally published on\s+\S+\s*',
         '',
         raw_desc,
     )
+    raw_desc = re.split(r'(?i)\bread the full article\b', raw_desc, maxsplit=1)[0]
     raw_desc = re.sub(r'(?i)(?:https?://|www\.)\S+|\b[\w-]+\.(?:org|com|net|in)(?:/\S*)?', '', raw_desc)
     raw_desc = re.sub(r'\s+', ' ', raw_desc).strip(' .,:;-')
     source = article.get('source', '').strip()
 
     # Part 1: Core development
-    p1 = f"{title}. Reported by {source}, this development marks a significant update in {category.capitalize()}."
+    p1 = title.rstrip('. ') + '.'
     
     # Part 2: Technical context / intel (bounded to ~220 chars to guarantee clean single-post fit)
     if raw_desc and len(raw_desc) > 25:
@@ -247,10 +248,10 @@ def craft_in_depth_news_thread(category: str, article: dict) -> str:
         clean_d = clean_d.rstrip('. \t\n') + '.' if clean_d and not clean_d.endswith(('.', '!', '?')) else clean_d
         p2 = f"Key details: {clean_d}"
     else:
-        p2 = f"According to technical disclosures from {source}, implementation frameworks and capability evaluation are actively proceeding."
+        p2 = "The available feed contains no additional technical details beyond the headline."
 
     # Part 3: Significance & verification
-    p3 = f"Significance: Domain specialists note this milestone provides critical validation for next-phase deployment in {category.capitalize()}. Source: {source}."
+    p3 = "The feed excerpt does not establish deployment status or demonstrated performance; those details require further confirmation."
 
     return f"{p1}\n\n{p2}\n\n{p3}"
 
