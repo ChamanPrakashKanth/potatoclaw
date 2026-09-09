@@ -487,6 +487,30 @@ JS_CLICK_POST_ALL = """
 })()
 """
 
+JS_READ_COMPOSER_STATE = """
+(() => {
+    const boxes = Array.from(document.querySelectorAll('[data-testid^="tweetTextarea_"], [role="textbox"]'));
+    const labels = Array.from(document.querySelectorAll('button')).map(button => ({
+        text: (button.innerText || '').trim().toLowerCase(),
+        aria: (button.getAttribute('aria-label') || '').trim().toLowerCase(),
+    }));
+    const addPostVisible = labels.some(({ text, aria }) =>
+        text.includes('add post') || aria.includes('add post') || aria.includes('add another post') || aria.includes('plus'))
+    );
+    const submitVisible = labels.some(({ text, aria }) =>
+        text.includes('post all') || aria.includes('post all')
+    );
+    const bodyText = (document.body && document.body.innerText || '').toLowerCase();
+    return {
+        count: boxes.length,
+        texts: boxes.map(box => (box.innerText || box.textContent || '').trim()),
+        add_post_visible: addPostVisible,
+        submit_visible: submitVisible,
+        sent: bodyText.includes('your post was sent') || bodyText.includes('your posts were sent'),
+    };
+})()
+"""
+
 
 def compose_x_thread_cdp(
     thread_parts: List[str],
@@ -532,6 +556,13 @@ def compose_x_thread_cdp(
     try:
         client = MiniCDP(ws_url, timeout=12.0)
 
+        def composer_state() -> Dict[str, Any]:
+            state = client.eval(JS_READ_COMPOSER_STATE)
+            return state if isinstance(state, dict) else {}
+
+        def normalized_visible_text(value: Any) -> str:
+            return re.sub(r"\s+", " ", str(value or "")).strip()
+
         # 1. Ensure on compose page
         current_url = client.eval("window.location.href") or ""
         if "x.com" not in current_url and "twitter.com" not in current_url:
@@ -570,15 +601,21 @@ def compose_x_thread_cdp(
             input_res = client.call("Input.insertText", {"text": part_text})
 
             # Verify if content was inserted, else use fallback DOM type script
-            box_len = client.eval(f"""(() => {{
-                let box = document.querySelector('[data-testid="tweetTextarea_{idx}"]') ||
-                          document.querySelectorAll('[role="textbox"]')[{idx}];
-                return box ? box.textContent.length : 0;
-            }})()""") or 0
+            state = composer_state()
+            visible_text = (state.get("texts") or [""])[idx] if idx < len(state.get("texts") or []) else ""
 
-            if box_len == 0:
+            if normalized_visible_text(visible_text) != normalized_visible_text(part_text):
                 type_script = generate_type_script(idx, part_text)
                 client.eval(type_script)
+
+                state = composer_state()
+                visible_text = (state.get("texts") or [""])[idx] if idx < len(state.get("texts") or []) else ""
+            if normalized_visible_text(visible_text) != normalized_visible_text(part_text):
+                return {
+                    "status": "ERROR",
+                    "message": f"Post {post_num}/{total} was not verified in composer state.",
+                    "filled_parts": filled_count,
+                }
 
             filled_count += 1
 
@@ -587,13 +624,54 @@ def compose_x_thread_cdp(
                 time.sleep(0.5)
                 print(f"   [+] Clicking 'Add post' (+) button to create box #{idx + 1}...")
                 click_res = client.eval(JS_CLICK_ADD_BUTTON)
-                if not click_res or not click_res.get("success"):
-                    time.sleep(0.8)
-                    client.eval(JS_CLICK_ADD_BUTTON)
-                # Wait for Twitter DOM to render the new textarea
-                time.sleep(0.8)
+                expected_count = idx + 2
+                for _ in range(10):
+                    time.sleep(0.3)
+                    state = composer_state()
+                    if int(state.get("count", 0)) >= expected_count:
+                        break
+                else:
+                    # Re-snapshot the visible state before any recovery click.
+                    # A second click is allowed only when the refreshed DOM still
+                    # exposes an Add post control; this avoids blind click loops.
+                    print(f"   [!] Add post did not create box #{idx + 1}; visible state: {json.dumps(state, ensure_ascii=False)}")
+                    if state.get("add_post_visible"):
+                        print("   [*] Retrying Add post once after the refreshed composer snapshot...")
+                        retry_res = client.eval(JS_CLICK_ADD_BUTTON)
+                        for _ in range(10):
+                            time.sleep(0.3)
+                            state = composer_state()
+                            if int(state.get("count", 0)) >= expected_count:
+                                break
+                        else:
+                            return {
+                                "status": "ERROR",
+                                "message": f"Add post control did not expose composer box #{idx + 1} after recovery.",
+                                "filled_parts": filled_count,
+                                "visible_state": state,
+                            }
+                    else:
+                        return {
+                            "status": "ERROR",
+                            "message": f"Add post control disappeared before composer box #{idx + 1} could be created.",
+                            "filled_parts": filled_count,
+                            "visible_state": state,
+                        }
 
         print(f"\n[✔] Successfully typed all {filled_count}/{total} post(s) into X composer!")
+
+        final_state = composer_state()
+        final_texts = final_state.get("texts") or []
+        if int(final_state.get("count", 0)) != total or any(
+            normalized_visible_text(final_texts[idx] if idx < len(final_texts) else "") != normalized_visible_text(part)
+            for idx, part in enumerate(thread_parts)
+        ):
+            return {
+                "status": "ERROR",
+                "message": "Final composer verification did not match the expected thread parts.",
+                "filled_parts": filled_count,
+                "visible_state": final_state,
+            }
 
         # 4. Submit Gate Enforcement
         if not allow_submit:
@@ -611,10 +689,20 @@ def compose_x_thread_cdp(
             print("[CDP] Explicit --allow-submit granted: Clicking 'Post all'...")
             time.sleep(1.0)
             submit_res = client.eval(JS_CLICK_POST_ALL)
-            time.sleep(2.0)
+            if not submit_res or not submit_res.get("success"):
+                return {"status": "ERROR", "message": "Post all control was not found after final draft verification."}
+            for _ in range(10):
+                time.sleep(0.5)
+                submitted_state = composer_state()
+                if submitted_state.get("sent"):
+                    return {
+                        "status": "SUBMITTED",
+                        "message": f"Submitted all {total} posts live to X and verified the sent confirmation.",
+                        "parts": total
+                    }
             return {
-                "status": "SUBMITTED",
-                "message": f"Submitted all {total} posts live to X.",
+                "status": "SUBMIT_UNVERIFIED",
+                "message": "Post all was activated, but X did not expose a sent confirmation in the verification window.",
                 "parts": total
             }
 

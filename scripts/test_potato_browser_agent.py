@@ -9,6 +9,8 @@ Unit tests for PotatoClaw Browser Agent:
 """
 
 import unittest
+import sys
+from unittest.mock import patch
 import potato_browser_agent as browser
 from potato_browser_agent import split_x_thread, BrowserThreadState
 
@@ -28,6 +30,14 @@ class BrowserPolicyTests(unittest.TestCase):
             {"action": "submit", "ref": "e9"},
         )
 
+    def test_normalizes_wait_and_rejects_invalid_seconds(self):
+        self.assertEqual(
+            browser.normalize_action({"action": "wait", "seconds": 2}),
+            {"action": "wait", "seconds": "2"},
+        )
+        with self.assertRaises(browser.BrowserPolicyError):
+            browser.normalize_action({"action": "wait", "seconds": "not-a-number"})
+
     def test_rejects_missing_required_field(self):
         with self.assertRaises(browser.BrowserPolicyError):
             browser.normalize_action({"action": "click"})
@@ -40,6 +50,11 @@ class BrowserPolicyTests(unittest.TestCase):
         snap = '- button "Post all" [ref=e30]'
         self.assertTrue(browser.ref_looks_irreversible(snap, "e30"))
 
+    def test_submit_ref_detection_does_not_mix_adjacent_controls(self):
+        snap = '- button "Add post" [ref=e20]\n- button "Post all" [ref=e30]'
+        self.assertFalse(browser.ref_looks_irreversible(snap, "e20"))
+        self.assertTrue(browser.ref_looks_irreversible(snap, "e30"))
+
     def test_submit_requires_approval(self):
         ok, message, approval = browser.execute_action(
             {"action": "submit", "ref": "e30"},
@@ -49,6 +64,28 @@ class BrowserPolicyTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(approval)
         self.assertIn("APPROVAL_REQUIRED", message)
+
+    def test_resolved_openclaw_cli_executes_browser_command(self):
+        script = "import sys; print(' '.join(sys.argv[1:]))"
+        with patch.object(browser, "_OPENCLAW_CLI_CHECKED", True), patch.object(
+            browser, "_OPENCLAW_CLI", [sys.executable, "-c", script]
+        ):
+            code, stdout, stderr = browser.run_browser_cmd(["status"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "browser status")
+        self.assertEqual(stderr, "")
+
+    def test_native_navigation_is_reported_unverified_without_cli(self):
+        with patch.object(browser, "_OPENCLAW_CLI_CHECKED", True), patch.object(
+            browser, "_OPENCLAW_CLI", None
+        ), patch.object(browser, "_OPENCLAW_CLI_ERROR", "CLI unavailable"), patch.object(
+            browser, "open_url_direct", return_value=True
+        ):
+            result = browser.run_browser_agent("Open https://x.com and navigate to the home page")
+
+        self.assertEqual(result["status"], "UNVERIFIED")
+        self.assertIn("verification is unavailable", result["message"])
 
 
 class TestPotatoXThreadSplitter(unittest.TestCase):

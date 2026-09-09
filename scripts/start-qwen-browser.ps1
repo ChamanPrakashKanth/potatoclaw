@@ -26,6 +26,13 @@ $Alias = "qwen2.5-0.5b:latest"
 $Port = 11436
 $Health = "http://127.0.0.1:$Port/health"
 $Chat = "http://127.0.0.1:$Port/v1/chat/completions"
+$DownloadUrl = if ($env:POTATO_QWEN_DOWNLOAD_URL) {
+    $env:POTATO_QWEN_DOWNLOAD_URL
+} else {
+    "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf?download=true"
+}
+$DownloadSha256 = "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
+$Ngl = if ($env:POTATO_QWEN_NGL) { $env:POTATO_QWEN_NGL } else { "99" }
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " PotatoClaw + Qwen2.5-0.5B Browser Policy" -ForegroundColor Cyan
@@ -33,6 +40,39 @@ Write-Host "==========================================================" -Foregro
 Write-Host "Model:   $ModelPath"
 Write-Host "Context: 2048"
 Write-Host "Port:    $Port"
+
+# Download only the default official Qwen artifact when it is absent. A custom
+# POTATO_QWEN_GGUF path is treated as operator-managed and is never overwritten.
+if (-not $env:POTATO_QWEN_GGUF) {
+    Write-Host "[1/3] Checking the official Qwen GGUF..." -ForegroundColor Yellow
+    $quotedModel = $ModelPath.Replace("'", "'\''")
+    $quotedUrl = $DownloadUrl.Replace("'", "'\''")
+    $downloadCmd = @'
+set -e
+target='__MODEL__'
+tmp="$target.download"
+mkdir -p /home/openclaw
+if [ ! -s "$target" ] || ! echo "__SHA256__  $target" | sha256sum -c - >/dev/null 2>&1; then
+  rm -f "$tmp"
+  if command -v curl >/dev/null 2>&1; then
+    curl -L --fail --retry 3 --retry-delay 2 '__URL__' -o "$tmp"
+  else
+    wget -O "$tmp" '__URL__'
+  fi
+  mv "$tmp" "$target"
+fi
+echo "__SHA256__  $target" | sha256sum -c -
+'@
+    $downloadCmd = $downloadCmd.Replace("__MODEL__", $quotedModel).Replace("__URL__", $quotedUrl).Replace("__SHA256__", $DownloadSha256)
+    wsl.exe -u openclaw -d OpenClawGateway -e bash -lc $downloadCmd
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[!] Could not download or verify the official Qwen GGUF." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  -> Qwen GGUF present and SHA-256 verified." -ForegroundColor Green
+} else {
+    Write-Host "[1/3] Using operator-managed Qwen GGUF path." -ForegroundColor Yellow
+}
 
 $isReady = $false
 try {
@@ -44,8 +84,12 @@ try {
 
     $quotedModel = $ModelPath.Replace("'", "'\''")
     $quotedServer = $ServerBin.Replace("'", "'\''")
-    $cmd = "nohup '$quotedServer' -m '$quotedModel' -c 2048 -np 1 -fa on -ngl 99 -t 6 --host 0.0.0.0 --port $Port --alias $Alias > /home/openclaw/qwen-browser.log 2>&1 &"
-    wsl -u openclaw -d OpenClawGateway -e bash -lc $cmd
+    $cmd = "test -x '$quotedServer'; test -s '$quotedModel'; nohup '$quotedServer' -m '$quotedModel' -c 2048 -np 1 -fa on -ngl $Ngl -t 6 --host 0.0.0.0 --port $Port --alias $Alias > /home/openclaw/qwen-browser.log 2>&1 &"
+    wsl.exe -u openclaw -d OpenClawGateway -e bash -lc $cmd
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[!] Qwen server preflight/start command failed." -ForegroundColor Red
+        exit 1
+    }
 
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 1
@@ -66,6 +110,8 @@ if (-not $isReady) {
     Write-Host "    Check: wsl -u openclaw -d OpenClawGateway -e cat /home/openclaw/qwen-browser.log"
     exit 1
 }
+
+Write-Host "[2/3] Qwen health endpoint is ready." -ForegroundColor Green
 
 $body = @{
     model = $Alias
@@ -90,6 +136,8 @@ try {
     Write-Host "[!] Server is healthy but inference test failed: $_" -ForegroundColor Red
     exit 1
 }
+
+Write-Host "[3/3] Qwen chat-completions inference verified." -ForegroundColor Green
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " Qwen browser policy is ready." -ForegroundColor Cyan

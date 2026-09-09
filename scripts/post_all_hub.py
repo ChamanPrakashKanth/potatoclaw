@@ -46,6 +46,11 @@ except ImportError:
     split_x_thread = None
 
 try:
+    from potato_cat_bmw import BmwGraphBridge
+except ImportError:
+    BmwGraphBridge = None
+
+try:
     from potato_cdp import (
         compose_x_thread_cdp,
         generate_browser_console_script,
@@ -82,6 +87,14 @@ def open_url_in_browser(url: str) -> bool:
     return False
 
 
+def _browser_result_succeeded(result, allow_submit: bool) -> bool:
+    """Accept only a deterministic browser outcome appropriate to the request."""
+    if not isinstance(result, dict):
+        return False
+    expected = "SUBMITTED" if allow_submit else "PREPARED_SAFE"
+    return result.get("status") == expected
+
+
 def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_mode: str = None, allow_submit: bool = False):
     """
     Curates #1 news story, drafts a concise post <= 280 chars, and routes
@@ -95,8 +108,25 @@ def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_
         
     article = articles[0]
     print(f"[+] Selected: {article['title']} ({article['source']})")
+    graph_memory = BmwGraphBridge("x_post", active_limit=8) if BmwGraphBridge else None
+    memory_block = ""
+    if graph_memory:
+        graph_memory.add_event(
+            "x_article",
+            "%s source=%s category=%s" % (article.get("title", ""), article.get("source", ""), category),
+            importance=0.85,
+        )
+        memory_block, memory_retrieval = graph_memory.context(article.get("title", category))
+        if memory_retrieval:
+            print("[BMW] X article retained: %d active concept(s), %d node(s) scanned via %s." % (
+                len(memory_retrieval.active_ids), memory_retrieval.scanned_nodes, memory_retrieval.scan_mode
+            ))
     print(f"[*] Crafting a concise factual post using PotatoClaw V3...")
-    post_text = generate_single_story_x_post(category, article)
+    post_text = generate_single_story_x_post(
+        category,
+        article,
+        graph_context=memory_block if graph_memory else "",
+    )
 
     if not post_text:
         print("[!] Automatic drafting failed. You can enter your own factual summary.")
@@ -111,6 +141,8 @@ def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_
             return None
     
     x_copy_to_clipboard(post_text)
+    if graph_memory:
+        graph_memory.add_event("x_post_draft", post_text, importance=0.8)
     
     print("\n" + "=" * 65)
     print(" 🐦 X POST READY (FACTUAL STYLE, WITHIN 280 CHARACTERS):")
@@ -125,9 +157,15 @@ def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_
             verb = "Post this on X" if allow_submit else "Open X and prepare a post saying"
             goal = f"{verb}: {post_text}"
             print(f"\n[*] Running Autonomous Browser Agent (Submit: {allow_submit})...")
-            run_browser_agent(goal, allow_submit=allow_submit)
+            browser_result = run_browser_agent(goal, allow_submit=allow_submit)
+            if graph_memory:
+                graph_memory.add_event("x_browser_outcome", str(browser_result), importance=1.0 if _browser_result_succeeded(browser_result, allow_submit) else 0.4)
+            if not _browser_result_succeeded(browser_result, allow_submit):
+                print(f"[!] Browser workflow did not verify the requested outcome: {browser_result}")
+                return None
         else:
             print("[!] potato_browser_agent module not available.")
+            return None
         return post_text
         
     if auto_open:
@@ -225,6 +263,7 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
 
     text = initial_text
     add_num = True
+    graph_memory = BmwGraphBridge("x_thread", active_limit=8) if BmwGraphBridge else None
 
     # Autonomous CLI invocation (e.g. post_all.bat thread auto [category])
     if initial_text and initial_text.lower() in ["auto", "curate"]:
@@ -313,6 +352,16 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
     else:
         parts = [text[i:i+280] for i in range(0, len(text), 280)]
 
+    if graph_memory:
+        graph_memory.add_event("x_thread_source", text, importance=0.85)
+        for index, part in enumerate(parts, 1):
+            graph_memory.add_event("x_thread_part_%d" % index, part, importance=0.7)
+        _, memory_retrieval = graph_memory.context("X thread source and post parts")
+        if memory_retrieval:
+            print("[BMW] X thread retained: %d active concept(s), %d node(s) scanned via %s." % (
+                len(memory_retrieval.active_ids), memory_retrieval.scanned_nodes, memory_retrieval.scan_mode
+            ))
+
     print(f"\n[✔] Deterministically split into {len(parts)} thread post(s) (Zero Word Cutoff):")
     print("-" * 65)
     for idx, part in enumerate(parts, 1):
@@ -324,13 +373,22 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
     if allow_submit:
         if compose_x_thread_cdp and get_active_cdp_port and get_active_cdp_port():
             print(f"\n[*] Active Chrome CDP detected. Publishing {len(parts)}-part thread via Chrome DevTools Protocol...")
-            compose_x_thread_cdp(parts, allow_submit=True)
-            return
+            result = compose_x_thread_cdp(parts, allow_submit=True)
+            if graph_memory:
+                graph_memory.add_event("x_thread_outcome", str(result), importance=1.0 if isinstance(result, dict) and result.get("status") == "SUBMITTED" else 0.4)
+            return result.get("status") == "SUBMITTED" if isinstance(result, dict) else False
         goal = f"Post this on X as a non-Premium thread: {text}"
         print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
         if run_browser_agent:
-            run_browser_agent(goal, allow_submit=True)
-        return
+            result = run_browser_agent(goal, allow_submit=True)
+            if graph_memory:
+                graph_memory.add_event("x_thread_outcome", str(result), importance=1.0 if _browser_result_succeeded(result, True) else 0.4)
+            if not _browser_result_succeeded(result, True):
+                print(f"[!] Browser workflow did not verify live publication: {result}")
+                return False
+            return True
+        print("[!] potato_browser_agent module not available.")
+        return False
 
     print(" Actions:")
     print("   [1] ⚡ Compose Thread via Chrome/Edge CDP (Automated 1 -> [+] -> 2 -> [+])")
@@ -516,6 +574,7 @@ def select_category():
 
 if __name__ == "__main__":
     purge_all_caches(verbose=False)
+    exit_code = 0
     if len(sys.argv) > 1:
         args = sys.argv[1:]
         cmd = args[0].lower()
@@ -523,15 +582,16 @@ if __name__ == "__main__":
         use_browser = "--browser" in args or "-b" in args
 
         if cmd in ["chat", "agent", "potato"]:
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "potato_chat.py")])
+            exit_code = subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "potato_chat.py")]).returncode
         elif cmd in ["thread", "threads"]:
             text_parts = [a for a in args[1:] if not a.startswith("--") and not a.startswith("-")]
             if text_parts and text_parts[0].lower() in ["auto", "curate"]:
                 cat = text_parts[1].lower() if len(text_parts) > 1 else "tech"
-                run_thread_workflow(initial_text="auto", allow_submit=allow_submit, category=cat)
+                result = run_thread_workflow(initial_text="auto", allow_submit=allow_submit, category=cat)
             else:
                 text_arg = " ".join(text_parts).strip() if text_parts else None
-                run_thread_workflow(initial_text=text_arg, allow_submit=allow_submit)
+                result = run_thread_workflow(initial_text=text_arg, allow_submit=allow_submit)
+            exit_code = 0 if result else 1
         elif cmd in ["browser", "browse"]:
             goal_parts = [a for a in args[1:] if not a.startswith("--") and not a.startswith("-")]
             goal_arg = " ".join(goal_parts).strip()
@@ -539,30 +599,38 @@ if __name__ == "__main__":
                 run_browser_agent_workflow()
             else:
                 if run_browser_agent:
-                    run_browser_agent(goal_arg, allow_submit=allow_submit)
+                    result = run_browser_agent(goal_arg, allow_submit=allow_submit)
+                    exit_code = 0 if _browser_result_succeeded(result, allow_submit) else 1
                 else:
                     print("[!] potato_browser_agent not available.")
+                    exit_code = 1
         elif cmd == "x":
             cat = "tech"
             remaining = [a for a in args[1:] if not a.startswith("--") and not a.startswith("-")]
             if remaining:
                 cat = remaining[0].lower()
-            run_x_post_workflow(
+            result = run_x_post_workflow(
                 category=cat,
                 auto_open=True,
                 browser_mode="agent" if use_browser else None,
                 allow_submit=allow_submit
             )
+            exit_code = 0 if result else 1
         elif cmd in ["test", "tests"]:
-            print("\n[1/4] Running Browser Agent & Thread Splitter Tests...")
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_browser_agent.py")])
-            print("\n[2/4] Running Chrome DevTools Protocol (CDP) Tests...")
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_cdp.py")])
-            print("\n[3/4] Running V3 Core Architectural Tests...")
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")])
-            print("\n[4/4] Running V2 Integration Tests...")
-            subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")])
+            test_exit_codes = []
+            print("\n[1/5] Running Browser Agent & Thread Splitter Tests...")
+            test_exit_codes.append(subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_browser_agent.py")]).returncode)
+            print("\n[2/5] Running Chrome DevTools Protocol (CDP) Tests...")
+            test_exit_codes.append(subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_cdp.py")]).returncode)
+            print("\n[3/5] Running V3 Core Architectural Tests...")
+            test_exit_codes.append(subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_core.py")]).returncode)
+            print("\n[4/5] Running V2 Integration Tests...")
+            test_exit_codes.append(subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_potato_v2.py")]).returncode)
+            print("\n[5/5] Running CAT/BMW Chat + X Integration Tests...")
+            test_exit_codes.append(subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "test_cat_bmw_integration.py")]).returncode)
+            exit_code = 0 if all(code == 0 for code in test_exit_codes) else 1
         else:
             show_interactive_hub()
     else:
         show_interactive_hub()
+    sys.exit(exit_code)

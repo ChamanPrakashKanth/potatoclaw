@@ -256,7 +256,7 @@ def clean_x_tweet_output(raw_text, category, link="", source=""):
     return trimmed + '...' + link_section if trimmed else None
 
 
-def generate_single_story_x_post(category, article):
+def generate_single_story_x_post(category, article, graph_context=""):
     """
     Crafts ONE high-impact post tailored strictly under 280 characters for Non-Premium X users
     using PotatoClaw V3 Bounded Working Memory and Deterministic Verifier.
@@ -274,7 +274,8 @@ def generate_single_story_x_post(category, article):
     else:
         bwm_block = f"HEADLINE: {article['title']}\nFACTS: {article.get('desc', '')[:120]}"
 
-    prompt = f"""{bwm_block}
+    graph_block = f"\n\n{graph_context[:700]}" if graph_context else ""
+    prompt = f"""{bwm_block}{graph_block}
 
 Write one factual X news post in 1-2 short sentences, at most 250 characters.
 Start with the organisation or subject and what happened. Then explain its

@@ -63,6 +63,11 @@ try:
 except ImportError:
     def fetch_category_news(cat, max_items=2): return []
 
+try:
+    from potato_cat_bmw import BmwGraphBridge
+except ImportError:
+    BmwGraphBridge = None
+
 SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
 SPARK_HEALTH_URL = "http://127.0.0.1:11435/health"
 MODEL_ID = "spark-x2.5-4b:latest"
@@ -394,7 +399,7 @@ def call_potato_agent(messages, max_tokens=1000, temperature=0.1):
             "content": f"[Error connecting to Spark model server: {e}]"
         }
 
-def build_system_prompt_v3(bwm_block="", tools_enabled=True):
+def build_system_prompt_v3(bwm_block="", tools_enabled=True, graph_block=""):
     base = "You are PotatoAI 🥔, an ultra-fast local computer agent powered by PotatoClaw V3 architecture."
     rules = [
         "Be concise, clear, and direct in 1-2 sentences.",
@@ -409,6 +414,8 @@ def build_system_prompt_v3(bwm_block="", tools_enabled=True):
     prompt = f"{base}\n" + "\n".join(f"- {r}" for r in rules)
     if bwm_block:
         prompt += f"\n\n{bwm_block}"
+    if graph_block:
+        prompt += f"\n\n{graph_block}"
     return prompt
 
 def get_system_stats():
@@ -443,12 +450,15 @@ def run_interactive_chat():
     loop_detector = LoopDetector(max_identical_repeats=3)
     tools_enabled = True
     history = []
+    graph_memory = BmwGraphBridge("chat", active_limit=8) if BmwGraphBridge else None
     
     print(f"\n{CYAN}{BOLD}==================================================================={RESET}")
     print(f"{CYAN}{BOLD}   🥔 POTATOCLAW V3 AI AGENT CHAT (GRAPH-LLM & BWM ARCHITECTURE)  {RESET}")
     print(f"{CYAN}{BOLD}==================================================================={RESET}")
     print(f" {DIM}Hardware: GTX 1650 (4GB VRAM) | Context: 2048 Tokens | Zero Cloud{RESET}")
     print(f" {DIM}Rule Zero: Direct tool execution enabled (0.05s latency){RESET}")
+    if graph_memory and graph_memory.enabled:
+        print(f" {DIM}BMW graph memory: ENABLED (active concept budget 8){RESET}")
     
     server_online = check_model_server()
     if server_online:
@@ -478,6 +488,8 @@ def run_interactive_chat():
 
         elif cmd in ["/reset", "/clear", "/c"]:
             bwm.clear()
+            if graph_memory:
+                graph_memory.clear()
             history.clear()
             loop_detector.reset()
             purge_all_caches(verbose=False)
@@ -488,6 +500,7 @@ def run_interactive_chat():
         elif cmd in ["/stats", "/s"]:
             stats = get_system_stats()
             b_block = bwm.format_prompt_block()
+            graph_stats = graph_memory.stats() if graph_memory else {"enabled": False, "nodes": 0, "active": 0}
             print(f"\n{CYAN}--- PotatoClaw V3 System & Architectural Stats ---{RESET}")
             print(f" GPU VRAM       : {stats['vram']}")
             print(f" System RAM     : {stats['ram']}")
@@ -495,6 +508,7 @@ def run_interactive_chat():
             print(f" BWM Active Size: {len(b_block)} / 850 chars")
             print(f" Protected Facts: {len(bwm.protected_keys)}")
             print(f" Loop Breaker   : Active (Max 3 repeats)")
+            print(f" BMW Graph      : {'ON' if graph_stats['enabled'] else 'OFF'} ({graph_stats['nodes']} nodes)")
             print(f" History Turns  : {len(history)} turns active\n")
             continue
 
@@ -547,6 +561,12 @@ def run_interactive_chat():
             print(f"{DIM}Observation ({len(tool_result)} chars) {ver_badge}:{RESET}\n{tool_result}")
             
             bwm.add_fact(f"Completed {direct_tool}: {tool_result[:60]}")
+            if graph_memory:
+                graph_memory.add_event(
+                    "chat_tool_result",
+                    "%s verified=%s: %s" % (direct_tool, is_verified, tool_result),
+                    importance=0.8 if is_verified else 0.6,
+                )
             history.append({"role": "user", "content": user_input})
             history.append({"role": "assistant", "content": f"Here is what was found:\n{tool_result[:250]}"})
             lat_ms = round((time.time() - t0_fast) * 1000)
@@ -555,10 +575,13 @@ def run_interactive_chat():
 
         # Add user turn to BWM
         bwm.add_fact(f"User asked: {user_input[:80]}")
+        if graph_memory:
+            graph_memory.add_event("chat_request", user_input, importance=0.7)
 
         # Build Context with BWM prompt block (keep last 2 conversational turns only)
         bwm_block = bwm.format_prompt_block()
-        sys_prompt = build_system_prompt_v3(bwm_block, tools_enabled)
+        graph_block, _graph_retrieval = graph_memory.context(user_input) if graph_memory else ("", None)
+        sys_prompt = build_system_prompt_v3(bwm_block, tools_enabled, graph_block)
         
         recent_history = history[-2:]
         messages = [{"role": "system", "content": sys_prompt}]
@@ -594,13 +617,22 @@ def run_interactive_chat():
                     else:
                         failure_store.record_failure("chat_turn", f"{tool_name}({tool_args})", tool_result[:80])
                         bwm.add_fact(f"Tool {tool_name} failed: {tool_result[:60]}")
+                    if graph_memory:
+                        graph_memory.add_event(
+                            "chat_tool_result",
+                            "%s verified=%s: %s" % (tool_name, is_verified, tool_result),
+                            importance=0.8 if is_verified else 0.6,
+                        )
                     
                     clean_agent_call = re.sub(r'<tool_call>.*?</tool_call>', '', agent_text, flags=re.DOTALL).strip()
                     if not clean_agent_call or clean_agent_call == "<tool_call>":
                         clean_agent_call = f"I executed {tool_name} with {tool_args}."
                         
                     follow_up_msgs = [
-                        {"role": "system", "content": build_system_prompt_v3(bwm.format_prompt_block(), False)},
+                        {"role": "system", "content": build_system_prompt_v3(
+                            bwm.format_prompt_block(), False,
+                            graph_memory.context(user_input)[0] if graph_memory else "",
+                        )},
                         {"role": "user", "content": user_input},
                         {"role": "assistant", "content": clean_agent_call},
                         {"role": "user", "content": f"Tool output was:\n{tool_result}\nProvide a concise 1-2 sentence summary to the user."}
@@ -623,6 +655,8 @@ def run_interactive_chat():
         tok_info = f" | {toks} tokens" if toks > 0 else ""
         print(f"\n{DIM}[{ms}ms{tok_info}]{RESET}\n")
 
+        if graph_memory:
+            graph_memory.add_event("chat_response", agent_text, importance=0.5)
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": agent_text})
 
@@ -630,12 +664,18 @@ def test_single_turn(prompt):
     """Executes a single test turn without entering interactive mode."""
     bwm = BoundedWorkingMemory()
     bwm.add_fact(prompt)
-    sys_prompt = build_system_prompt_v3(bwm.format_prompt_block(), True)
+    graph_memory = BmwGraphBridge("chat_test", active_limit=8) if BmwGraphBridge else None
+    if graph_memory:
+        graph_memory.add_event("chat_request", prompt, importance=0.7)
+    graph_block = graph_memory.context(prompt)[0] if graph_memory else ""
+    sys_prompt = build_system_prompt_v3(bwm.format_prompt_block(), True, graph_block)
     messages = [
         {"role": "system", "content": sys_prompt},
         {"role": "user", "content": prompt}
     ]
     resp = call_potato_agent(messages)
+    if graph_memory:
+        graph_memory.add_event("chat_response", resp.get("content", ""), importance=0.5)
     print(json.dumps({
         "success": resp["success"],
         "content": resp["content"],

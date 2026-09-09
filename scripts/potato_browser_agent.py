@@ -13,11 +13,13 @@ Target Architecture:
 import sys
 sys.dont_write_bytecode = True
 
+import math
 import os
 import re
 import json
 import time
 import argparse
+import shutil
 import subprocess
 import urllib.request
 import urllib.parse
@@ -252,7 +254,51 @@ def ensure_cdp_bridge() -> bool:
         return False
 
 _OPENCLAW_CLI_CHECKED = False
-_OPENCLAW_CLI_WORKING = False
+_OPENCLAW_CLI: Optional[List[str]] = None
+_OPENCLAW_CLI_ERROR = ""
+
+
+def _resolve_openclaw_cli() -> Optional[List[str]]:
+    """Resolves the browser CLI without assuming that ``openclaw`` is on PATH."""
+    global _OPENCLAW_CLI_CHECKED, _OPENCLAW_CLI, _OPENCLAW_CLI_ERROR
+    if _OPENCLAW_CLI_CHECKED:
+        return _OPENCLAW_CLI
+
+    _OPENCLAW_CLI_CHECKED = True
+    configured = os.environ.get("POTATO_OPENCLAW_CLI", "").strip()
+    if configured:
+        configured_path = os.path.abspath(configured)
+        if os.path.isfile(configured_path):
+            _OPENCLAW_CLI = [configured_path]
+            return _OPENCLAW_CLI
+        _OPENCLAW_CLI_ERROR = f"POTATO_OPENCLAW_CLI does not point to a file: {configured}"
+
+    for name in ("openclaw", "openclaw.cmd"):
+        resolved = shutil.which(name)
+        if resolved:
+            # The repository's Windows wrapper only forwards into WSL. It is
+            # intentionally not an implicit fallback: when WSL is unavailable,
+            # it turns a missing local CLI into repeated opaque access errors.
+            if os.path.normcase(os.path.abspath(resolved)) == os.path.normcase(os.path.join(ROOT_DIR, "openclaw.cmd")):
+                continue
+            _OPENCLAW_CLI = [resolved]
+            return _OPENCLAW_CLI
+
+    # Source-tree fallback requested by the Windows workflow. Do not select it
+    # until a build output exists; otherwise every browser command would report
+    # a misleading runtime failure from openclaw.mjs.
+    node = shutil.which("node")
+    entry = os.path.join(ROOT_DIR, "openclaw.mjs")
+    built = any(os.path.isfile(os.path.join(ROOT_DIR, "dist", name)) for name in ("entry.js", "entry.mjs"))
+    if node and os.path.isfile(entry) and built:
+        _OPENCLAW_CLI = [node, entry]
+        return _OPENCLAW_CLI
+
+    if node and os.path.isfile(entry):
+        _OPENCLAW_CLI_ERROR = "OpenClaw source tree is unbuilt (dist/entry.js or dist/entry.mjs is missing)"
+    else:
+        _OPENCLAW_CLI_ERROR = "OpenClaw CLI was not found on PATH and the source-tree fallback is unavailable"
+    return None
 
 def open_url_direct(url: str) -> bool:
     """
@@ -289,20 +335,42 @@ def copy_to_clipboard(text: str) -> bool:
         return False
 
 def is_openclaw_cli_available() -> bool:
-    """Non-blocking check. Avoids hanging WSL or blocking subshells."""
-    return False
+    """Returns whether a usable local OpenClaw CLI command was resolved."""
+    return _resolve_openclaw_cli() is not None
 
 def run_browser_cmd(args: List[str], timeout: int = 3) -> Tuple[int, str, str]:
     """
     Executes a browser command deterministically.
     Routes navigation and open to native fast-path without freezing.
     """
-    if args and args[0] in ["navigate", "open"] and len(args) > 1:
+    cli = _resolve_openclaw_cli()
+    if cli is None and args and args[0] in ["navigate", "open"] and len(args) > 1:
         success = open_url_direct(args[1])
         if success:
             return 0, f"Navigated to {args[1]}", ""
 
-    return 1, "", "OpenClaw browser CLI not available (using native browser fast-path)"
+    if cli is None:
+        return 1, "", _OPENCLAW_CLI_ERROR or "OpenClaw browser CLI not available"
+
+    command = [*cli, "browser", *args]
+    if command[0].lower().endswith((".cmd", ".bat")):
+        command = ["cmd.exe", "/d", "/c", *command]
+    try:
+        result = subprocess.run(
+            command,
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(1, timeout),
+            check=False,
+        )
+        return result.returncode, strip_ansi(result.stdout).strip(), strip_ansi(result.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", f"OpenClaw browser command timed out after {timeout}s"
+    except OSError as exc:
+        return 1, "", f"Could not execute OpenClaw browser CLI: {exc}"
 
 
 def get_browser_snapshot() -> Tuple[str, List[Dict[str, str]]]:
@@ -370,7 +438,7 @@ def normalize_action(raw: Dict[str, Any]) -> Dict[str, str]:
         raise BrowserPolicyError(f"unsupported policy action: {action or '<empty>'}")
 
     out: Dict[str, str] = {"action": action}
-    for key in ("url", "ref", "text", "key", "note", "reason"):
+    for key in ("url", "ref", "text", "key", "note", "message", "reason", "seconds"):
         value = raw.get(key)
         if value is not None:
             out[key] = str(value).strip()
@@ -387,11 +455,21 @@ def normalize_action(raw: Dict[str, Any]) -> Dict[str, str]:
         raise BrowserPolicyError(f"{action} requires '{req}'")
     if action == "type" and "text" not in out:
         raise BrowserPolicyError("type requires 'text'")
+    if action == "wait" and "seconds" in out:
+        try:
+            seconds = float(out["seconds"])
+        except ValueError as exc:
+            raise BrowserPolicyError("wait seconds must be numeric") from exc
+        if not math.isfinite(seconds) or seconds < 0:
+            raise BrowserPolicyError("wait seconds must be finite and non-negative")
     return out
 
 def _line_context_for_ref(snapshot: str, ref: str) -> str:
-    low = snapshot.lower()
     needle = ref.lower()
+    for line in snapshot.splitlines():
+        if needle in line.lower():
+            return line.lower()
+    low = snapshot.lower()
     idx = low.find(needle)
     if idx < 0:
         return ""
@@ -449,7 +527,11 @@ def execute_action(
     elif kind == "press":
         args = ["press", action["key"]]
     elif kind == "wait":
-        args = ["wait", "--text", action.get("text", "")]
+        args = ["wait"]
+        if action.get("seconds"):
+            args.extend(["--time", str(max(0, int(float(action["seconds"]) * 1000)))])
+        if action.get("text"):
+            args.extend(["--text", action["text"]])
     else:
         return False, f"unsupported action {kind}", False
 
@@ -555,10 +637,13 @@ def run_browser_agent(
         if quote_match:
             extracted_text = quote_match.group(1).strip()
 
+    thread_state: Optional[BrowserThreadState] = None
+
     # 2. X Posting & Thread Fast-Path (0.05s response, zero hang)
     if extracted_text:
         should_split = is_thread or len(extracted_text) > 280
         thread_parts = split_x_thread(extracted_text, max_chars=280, add_numbering=should_split)
+        thread_state = BrowserThreadState(thread_parts) if is_thread else None
         print(f"[PotatoBrowserAgent] Extracted {len(thread_parts)} post part(s) (Zero Word Cutoff).")
         for idx, part in enumerate(thread_parts, 1):
             print(f"   [Part {idx}/{len(thread_parts)}] ({len(part)} chars): {part[:60]}...")
@@ -600,7 +685,7 @@ def run_browser_agent(
             print(" Submission held safely because --allow-submit was not provided.")
             print("=" * 65)
             return {
-                "status": "PREPARED_SAFE",
+                "status": "PREPARED_UNVERIFIED",
                 "message": f"Pre-filled X composer with {len(thread_parts)} post(s). Submission held safely.",
                 "parts": len(thread_parts),
                 "steps": 1
@@ -610,8 +695,8 @@ def run_browser_agent(
             print(" [✔] Live X Composer opened and pre-filled ready for instant posting!")
             print("=" * 65)
             return {
-                "status": "SUBMITTED",
-                "message": f"Opened live X composer with {len(thread_parts)} post(s).",
+                "status": "SUBMIT_UNVERIFIED",
+                "message": f"Opened live X composer with {len(thread_parts)} post(s), but could not verify submission.",
                 "parts": len(thread_parts),
                 "steps": 1
             }
@@ -626,13 +711,23 @@ def run_browser_agent(
 
     if target_url:
         print(f"[PotatoBrowserAgent] Direct Fast-Path: Navigating to {target_url}...")
-        open_url_direct(target_url)
+        opened = open_url_direct(target_url)
+        if not opened:
+            return {"status": "FAILED", "message": f"Could not open {target_url}", "steps": 1}
         if not is_openclaw_cli_available():
-            return {"status": "SUCCESS", "message": f"Navigated to {target_url}", "steps": 1}
+            return {
+                "status": "UNVERIFIED",
+                "message": f"Opened {target_url}, but browser CLI verification is unavailable.",
+                "steps": 1,
+            }
 
     # 4. Agent Execution Loop (Only if OpenClaw CLI is available)
     if not is_openclaw_cli_available():
-        return {"status": "SUCCESS", "message": "Browser command executed via native fast-path.", "steps": 1}
+        return {
+            "status": "UNVERIFIED",
+            "message": "Browser CLI is unavailable; no browser action was verified.",
+            "steps": 0,
+        }
 
     history = []
     step = 0
@@ -706,9 +801,17 @@ def run_browser_agent(
                                 return {"status": "SUBMITTED", "message": "Thread submitted live.", "steps": step}
 
         # Policy Action Selection
-        action_dict = query_qwen_policy(goal, snapshot_text, history)
-        if not action_dict:
-            action_dict = {"action": "wait", "seconds": 2}
+        raw_action_dict = query_qwen_policy(goal, snapshot_text, history)
+        if not raw_action_dict:
+            raw_action_dict = {"action": "wait", "seconds": 2}
+        try:
+            action_dict = normalize_action(raw_action_dict)
+        except BrowserPolicyError as exc:
+            return {
+                "status": "FAILED",
+                "message": f"Browser policy returned an invalid action: {exc}",
+                "steps": step,
+            }
 
         print(f"[Policy Action] {json.dumps(action_dict)}")
         action = action_dict.get("action")
@@ -726,6 +829,15 @@ def run_browser_agent(
         # Action Execution
         ok, result_msg, approval_req = execute_action(action_dict, snapshot_text, allow_submit)
         history.append({"action": action_dict, "result": result_msg})
+        if ok and action_dict.get("action") not in {"done", "fail"}:
+            verified_snapshot, verified_elements = get_browser_snapshot()
+            if verified_snapshot.startswith("Snapshot error:"):
+                return {
+                    "status": "FAILED",
+                    "message": f"{action_dict.get('action')} executed but post-action snapshot verification failed: {verified_snapshot}",
+                    "steps": step,
+                }
+            history[-1]["result"] = f"{result_msg}; post-action snapshot verified ({len(verified_elements)} interactive elements)"
         time.sleep(1)
 
     return {"status": "TIMEOUT", "message": f"Exceeded max steps ({max_steps})", "steps": step}

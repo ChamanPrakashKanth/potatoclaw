@@ -319,11 +319,40 @@ graph TD
 ```
 *Both servers run locally inside WSL2 with hard context caps ($\le 2048$ tokens) and single-slot Flash Attention.*
 
+### CATV3 Concept Graph + BMW Experiment
+
+The CATV3/BMW experiment is an explicit research harness in [`scripts/potato_cat_bmw.py`](scripts/potato_cat_bmw.py) and [`scripts/test_cat_bmw_smoke.py`](scripts/test_cat_bmw_smoke.py). It does not change the normal PotatoClaw agent path. `BMW_GRAPH_MEMORY` defaults to `0`; set it to `1` when recording an opt-in graph-memory run:
+
+```powershell
+# Offline architecture and prompt-path baseline. This does not claim LLM success.
+python scripts/test_cat_bmw_smoke.py --backend deterministic
+
+# Live Spark experiment using the existing PotatoAgent client and port 11435.
+$env:BMW_GRAPH_MEMORY = "1"
+python scripts/test_cat_bmw_smoke.py --backend spark --histories 10000,50000,100000 --limits 32
+```
+
+The three variants use the same synthetic task sequence, model settings, verifier, and 2048-token guard:
+
+- **A** sends raw historical context.
+- **B** sends the full concept graph without BMW decay.
+- **C** uses indexed one-hop retrieval, exponential decay, protected constraints, verifier-success reinforcement, bounded active serialization, and explicit exact-detail raw-record fallback.
+
+Each task reports raw history size `T`, graph nodes `M`, active concepts `A`, estimated and actual prompt tokens, completion tokens, selection/model/total latency, deterministic verifier status, constraint retention, excluded concepts, raw fallback use, scan count/mode, and prompt-leak results. `PASS` in deterministic mode verifies only the fixture and memory contracts; it is not an LLM result. In Spark mode, connection errors, missing usage fields, and context-guard rejections remain `UNVERIFIED`.
+
+The latest local live run was not a live model result: `http://127.0.0.1:11435/v1/chat/completions` refused the connection with Windows `WinError 10061`. The earlier smoke results were prompt-path results because Spark was offline. No `usage.prompt_tokens`, completion-token count, or Spark task success is claimed for that run. The deterministic sweep measured `M=172/841/1678` for `T=10,000/50,000/100,000`; variant C held `A=32`, had zero prompt-leak rows, and reported the intentional no-match full scan explicitly. Since Spark did not respond, the central question—whether actual Spark prompt tokens remain approximately bounded as `T` increases—is **UNVERIFIED**. Recommendation: **no-go for a live performance or capability conclusion** until the local Spark health endpoint responds; rerun the exact Spark command above after starting the server.
+
 ### 2. Launch Interactive Potato AI Agent Chat
 Double-click **`potato_chat.bat`** or run via PowerShell:
 ```powershell
 .\potato_chat.ps1
 ```
+For the opt-in CAT/BMW bridge used by both chat and X workflows:
+```powershell
+$env:BMW_GRAPH_MEMORY = "1"
+python scripts\potato_chat.py
+```
+Chat records requests, verified tool results, and responses in a bounded local graph. `/stats` shows graph status; `/reset` clears it. With the variable unset or set to `0`, the existing chat path is unchanged.
 *Try typing:*
 - `indian defence news` $\to$ *Instant breaking DRDO / IDRW stories (0.05s)*
 - `fetch_news tech` $\to$ *MIT Tech Review & Hacker News updates*
@@ -347,7 +376,7 @@ Double-click **`post_all.bat`** or run via PowerShell:
   .\post_all.bat thread "Long article..."          # Split & draft multi-post non-Premium thread (Zero Cutoff)
   .\post_all.bat thread article.txt --allow-submit # Publish thread from file to X
   .\post_all.bat browser "Open X home page"        # Direct autonomous browsing
-  .\post_all.bat test                              # Run all 94 test assertions
+  .\post_all.bat test                              # Run core + CAT/BMW integration (102 assertions)
   ```
 
 ---
@@ -363,13 +392,17 @@ python scripts\test_potato_core.py
 # 2. Run V2 Integration Test Suite (18/18 Passed)
 python scripts\test_potato_v2.py
 
-# 3. Run Browser Agent & Non-Premium Thread Splitter Tests (18/18 Passed)
+# 3. Run Browser Agent & Non-Premium Thread Splitter Tests (22/22 Passed)
 python scripts\test_potato_browser_agent.py
 
 # 4. Run Zero-Dependency Chrome CDP Engine Tests (10/10 Passed)
 python scripts\test_potato_cdp.py
 
-# Total Automated Architectural Verification: 94/94 Passed (100%)
+# 5. Verify the CAT/BMW chat + X integration boundaries (4/4 Passed)
+python scripts\test_cat_bmw_integration.py
+
+# Total core-suite verification: 98/98 Passed (100%)
+# Total including CAT/BMW integration boundaries: 102/102 Passed
 
 # Run Live PotatoBench Evaluation Suite (10 Tasks + 8 Ablations)
 python scripts\run_benchmarks.py potatobench

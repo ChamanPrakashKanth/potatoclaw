@@ -29,4 +29,12 @@ if (-not (Test-Path $PythonExe)) {
 }
 
 $ScriptPath = Join-Path $PSScriptRoot "scripts\post_all_hub.py"
-& $PythonExe $ScriptPath $args
+$previousLocation = Get-Location
+try {
+    Set-Location $PSScriptRoot
+    & $PythonExe $ScriptPath $args
+    $exitCode = $LASTEXITCODE
+} finally {
+    Set-Location $previousLocation
+}
+exit $exitCode
