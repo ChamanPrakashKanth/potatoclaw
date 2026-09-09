@@ -47,6 +47,7 @@
   - [9. Potential Research Applications: Industrial Edge & Diagnostics](#9-potential-research-applications-industrial-edge--diagnostics-exploratory--non-safety-critical)
 - [⚡ Empirical Evaluation: PotatoBench 10-Task Research Suite](#-empirical-evaluation-potatobench-10-task-research-suite)
 - [🏗️ PotatoClaw V3 Modular Architecture](#️-potatoclaw-v3-modular-architecture)
+- [🧠 Experimental CAT Graph + BMW Memory](#-experimental-cat-graph--bwm-memory)
 - [🥊 Architectural Comparison: Cloud-First Frameworks vs PotatoClaw](#-architectural-comparison-cloud-first-frameworks-vs-potatoclaw)
 - [💻 Hardware & Model Specifications](#-hardware--model-specifications)
 - [🚀 Quick Start & 1-Click Launchers](#-quick-start--1-click-launchers)
@@ -257,6 +258,43 @@ graph TD
    - Utility scoring function:
      $$\text{Score}(m_i, v) = w_1 \cdot \text{imp} + w_2 \cdot \text{rel}(v) + w_3 \cdot \text{nov} + w_4 \cdot \text{rec} - w_5 \cdot \text{cost}$$
    - Non-evictable protected memory for user goals, critical rules, and modified file paths.
+7. **🧠 Experimental CAT Graph + BMW Memory ([`scripts/potato_cat_bmw.py`](scripts/potato_cat_bmw.py))**:
+   - Opt-in with `BMW_GRAPH_MEMORY=1`; the default PotatoClaw path is unchanged.
+   - Converts observations into compact concept nodes with importance, decay, relevance, utility, graph relations, and raw-record source pointers.
+   - Serializes only a bounded active concept set into the model prompt; raw records are used only for explicit exact-detail fallback.
+   - Uses indexed candidate retrieval and one-hop graph traversal. The no-match fallback is intentionally measurable and may scan all stored concepts.
+
+### 🧠 Experimental CAT Graph + BMW Memory
+
+This reversible prototype tests the hypothesis:
+
+```text
+raw history -> concept graph -> BMW importance/decay -> active concepts -> local model
+```
+
+It does not change model weights, quantization, tokenizer settings, llama.cpp configuration, or Smart Copilot. Enable it only when testing:
+
+```powershell
+$env:BMW_GRAPH_MEMORY = "1"
+$env:BMW_GRAPH_ACTIVE_LIMIT = "32"
+python scripts\potato_chat.py
+```
+
+Run the synthetic smoke test across 10k, 50k, and 100k stored-history tokens:
+
+```powershell
+python scripts\test_cat_bmw_smoke.py --histories 10000,50000,100000 --limits 16,32,64
+```
+
+The first smoke test produced the following bounded-prompt result at active limit 32:
+
+| Stored raw tokens ($T$) | Graph nodes ($M$) | Prompt tokens | Required concepts retained | Irrelevant concepts excluded |
+|---:|---:|---:|---:|---:|
+| 10,011 | 714 | 86–228 | 6/6 | 6/6 |
+| 50,000 | 3,393 | 86–228 | 6/6 | 6/6 |
+| 100,010 | 6,727 | 86–228 | 6/6 | 6/6 |
+
+These are prompt-path and deterministic-verifier measurements. The local Spark endpoint was unavailable during this smoke test, so they are not evidence of improved neural reasoning accuracy. A larger evaluation must repeat the comparison with Spark online and report actual model latency and task accuracy.
 3. **🔍 Observation & Context Compilers ([`scripts/potato_compiler.py`](scripts/potato_compiler.py))**:
    - Compresses noisy multi-line terminal dumps and HTML DOM trees into 1–3 line structured summaries.
 4. **⚖️ Deterministic Verifier ([`scripts/potato_verifier.py`](scripts/potato_verifier.py))**:
