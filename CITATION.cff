@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use PotatoClaw in research or experiments, please cite this repository."
+title: "PotatoClaw: Ultra-Low-Resource Local AI Computer Agent"
+type: software
+authors:
+  - family-names: "Kanth"
+    given-names: "Chaman Prakash"
+repository-code: "https://github.com/ChamanPrakashKanth/potatoclaw"
+url: "https://github.com/ChamanPrakashKanth/potatoclaw"
+abstract: >-
+  PotatoClaw is an experimental local AI computer-agent framework for budget
+  hardware. It combines small local language models with deterministic graph
+  planning, bounded working memory, concept-graph memory experiments, tool use,
+  execution verification, and failure-aware control to study useful autonomous
+  behavior under tight VRAM and context constraints.
+keywords:
+  - "local AI agent"
+  - "computer use agent"
+  - "small language model"
+  - "4GB VRAM"
+  - "bounded working memory"
+  - "concept graph memory"
+  - "BMW memory"
+  - "deterministic verification"
+  - "llama.cpp"
+  - "offline AI"
