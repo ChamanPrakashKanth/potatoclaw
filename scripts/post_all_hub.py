@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PotatoClaw Master Content & Posting Hub
-Connects PotatoClaw V3 Agent, Autonomous Browser Agent (Qwen 0.5B),
+Connects PotatoClaw V3 Agent and its shared MiniCPM5-2B browser policy,
 and Deterministic Non-Premium X Thread Splitter to X (Twitter) posting workflows.
 """
 
@@ -212,6 +212,34 @@ def run_x_post_workflow(category: str = "tech", auto_open: bool = True, browser_
     return post_text
 
 
+_DANGLING_EXCERPT_END = re.compile(
+    r"(?i)\b(?:a|an|the|its|their|this|that|these|those|to|of|for|from|with|by|in|on|at|and|or|but|"
+    r"may|might|could|would|should|is|are|was|were|has|have|had|not meet|needed to)[.!?]*$"
+)
+
+
+def _complete_feed_claim(raw_desc: str, max_chars: int = 245) -> str:
+    """Return a complete factual sentence; never publish a clipped RSS fragment."""
+    text = re.sub(r"\s+", " ", raw_desc).strip()
+    if not text:
+        return ""
+
+    complete = re.findall(r".+?[.!?](?=\s|$)", text)
+    for sentence in complete:
+        sentence = sentence.strip()
+        if 35 <= len(sentence) <= max_chars and not _DANGLING_EXCERPT_END.search(sentence):
+            return sentence
+
+    # A feed may provide one long sentence. Keep a complete leading clause
+    # only when it ends at real punctuation; never manufacture a full stop at
+    # an arbitrary word boundary.
+    for match in reversed(list(re.finditer(r"[;:](?=\s|$)", text[:max_chars]))):
+        candidate = text[:match.end()].strip().rstrip(";:") + "."
+        if len(candidate) >= 35 and not _DANGLING_EXCERPT_END.search(candidate):
+            return candidate
+    return ""
+
+
 def craft_in_depth_news_thread(category: str, article: dict) -> str:
     """
     Crafts an authoritative 3-part factual news thread from a curated story.
@@ -235,23 +263,29 @@ def craft_in_depth_news_thread(category: str, article: dict) -> str:
     # Part 1: Core development
     p1 = title.rstrip('. ') + '.'
     
-    # Part 2: Technical context / intel (bounded to ~220 chars to guarantee clean single-post fit)
-    if raw_desc and len(raw_desc) > 25:
-        if len(raw_desc) > 220:
-            m = list(re.finditer(r'[.!?](?=\s|$)', raw_desc[:220]))
-            if m and m[-1].end() > 60:
-                clean_d = raw_desc[:m[-1].end()].strip()
-            else:
-                clean_d = raw_desc[:220].rsplit(' ', 1)[0].rstrip(' ,;:-') + "."
-        else:
-            clean_d = raw_desc
-        clean_d = clean_d.rstrip('. \t\n') + '.' if clean_d and not clean_d.endswith(('.', '!', '?')) else clean_d
-        p2 = f"Key details: {clean_d}"
+    # Part 2: retain only a grammatically complete feed claim. RSS providers
+    # often cut descriptions mid-sentence, so incomplete text is disclosed
+    # rather than dressed up as a finished factual statement.
+    clean_d = _complete_feed_claim(raw_desc)
+    title_lower = title.lower()
+    if clean_d:
+        p2 = clean_d
+    elif "tender" in title_lower or "procurement" in title_lower:
+        p2 = "This concerns a procurement step. A tender requests components; it does not by itself establish deployment or operational performance."
+    elif "certif" in title_lower or "sources say" in title_lower or " may " in f" {title_lower} ":
+        p2 = "The reported issue is provisional timing, not operational deployment. The feed excerpt does not provide a complete reason or an official revised schedule."
     else:
-        p2 = "The available feed contains no additional technical details beyond the headline."
+        p2 = "The feed confirms the reported development but does not provide a complete explanation, implementation timeline or measured result."
 
-    # Part 3: Significance & verification
-    p3 = "The feed excerpt does not establish deployment status or demonstrated performance; those details require further confirmation."
+    # Part 3: useful verification targets instead of generic significance.
+    if "tender" in title_lower or "procurement" in title_lower:
+        p3 = "What to watch: contract award, completed testing and official confirmation of integration or field deployment."
+    elif "certif" in title_lower or "engine" in title_lower:
+        p3 = "What to watch: an official certification schedule, completed test milestones and a confirmed integration or deployment plan."
+    else:
+        p3 = "What to watch: official confirmation, a concrete timeline and independently verifiable results beyond the initial report."
+    if source:
+        p3 = f"{p3} Source: {source}."
 
     return f"{p1}\n\n{p2}\n\n{p3}"
 
@@ -266,7 +300,7 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
     print("   POTATOCLAW NON-PREMIUM X THREAD COMPOSER")
     print("=" * 65)
     print(" Splits any long text/article into standard <=280-char X posts.")
-    print(" Automatically fills each part in X browser using Qwen 0.5B policy.")
+    print(" Automatically fills each part in X browser using the MiniCPM5-2B policy.")
     print("-" * 65)
 
     text = initial_text
@@ -387,6 +421,9 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
         if compose_x_thread_cdp and get_active_cdp_port and get_active_cdp_port():
             print(f"\n[*] Active Chrome CDP detected. Publishing {len(parts)}-part thread via Chrome DevTools Protocol...")
             result = compose_x_thread_cdp(parts, allow_submit=True)
+            print(f"[CDP] {result.get('status')}: {result.get('message', '')}")
+            for url in result.get("urls", []) if isinstance(result, dict) else []:
+                print(f"[CDP] Published: {url}")
             if graph_memory:
                 graph_memory.add_event("x_thread_outcome", str(result), importance=1.0 if isinstance(result, dict) and result.get("status") == "SUBMITTED" else 0.4)
             return result.get("status") == "SUBMITTED" if isinstance(result, dict) else False
@@ -485,7 +522,7 @@ def run_browser_agent_workflow():
     print("\n" + "=" * 65)
     print("   POTATOCLAW AUTONOMOUS BROWSER AGENT")
     print("=" * 65)
-    print(" Dedicated Qwen 0.5B Browser Action Policy on port 11436.")
+    print(" Shared MiniCPM5-2B Browser Action Policy on port 11435.")
     print(" Deterministic snapshot compaction, step execution & safety gates.")
     print("-" * 65)
     try:
@@ -512,7 +549,7 @@ def show_interactive_hub():
         print("\n" + "=" * 65)
         print("   POTATOCLAW V3 MASTER AUTOMATION & AGENT HUB")
         print("=" * 65)
-        print(" Models: Spark-X2.5-4B (11435) | Qwen2.5-0.5B Browser (11436)")
+        print(" Model: MiniCPM5-2B shared by chat and browser (11435)")
         print(" Engine: Graph-LLM DAG + BWM + Verifier + CDP Browser Policy")
         print("-" * 65)
         print(" [1] 🥔 Chat with Potato AI Agent V3 (Interactive Mode)")

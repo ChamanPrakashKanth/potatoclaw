@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title PotatoClaw - PotatoAI Agent Interactive Chat (Spark-X2.5-4B + BMW)
+title PotatoClaw - PotatoAI Agent Interactive Chat (MiniCPM5-2B + BMW)
 color 0E
 
 echo ======================================================================
-echo   POTATOCLAW AI AGENT CHAT (SPARK-X2.5-4B + BMW ARCHITECTURE)
+echo   POTATOCLAW AI AGENT CHAT (MINICPM5-2B + BMW ARCHITECTURE)
 echo ======================================================================
 echo.
 

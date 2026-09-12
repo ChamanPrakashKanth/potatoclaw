@@ -3,8 +3,8 @@
     PotatoClaw V3 Master Posting Hub & Autonomous Browser Agent
 .DESCRIPTION
     Launches concise factual news posting to X, non-Premium thread creation,
-    and autonomous browser interactions powered by Spark-X2.5-4B reasoning,
-    Qwen2.5-0.5B browser policy, and deterministic verification.
+    and autonomous browser interactions powered by the shared local MiniCPM
+    MiniCPM5-2B model and deterministic verification.
 .EXAMPLE
     .\post_all.ps1
     .\post_all.ps1 x tech

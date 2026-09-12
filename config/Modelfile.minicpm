@@ -1,10 +1,10 @@
-FROM C:\Users\user\Downloads\Model\Spark-X2.5-4B-Q4_K_M.gguf
+FROM C:\Users\user\Downloads\Model\MiniCPM5-2B-Q4_K_M.gguf
 
 # Low Context: 2048 tokens for ultra-low KV-cache RAM/VRAM footprint
 PARAMETER num_ctx 2048
 
-# GPU Offloading: Offload 26 layers to 4GB GTX 1650 VRAM (~2.4 GB)
-PARAMETER num_gpu 26
+# GPU Offloading: Keep this conservative for a 4GB GTX 1650; override if needed.
+PARAMETER num_gpu 18
 
 # CPU Offloading: Offload remaining computation across 6 CPU cores
 PARAMETER num_thread 6

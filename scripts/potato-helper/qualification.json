@@ -1,7 +1,7 @@
 {
-  "model": "spark-x2.5-4b:latest",
-  "checked_at": "2026-09-04T06:09:21Z",
-  "enabled": ["select-lines", "classify-request"],
+  "model": "minicpm5-2b:latest",
+  "checked_at": null,
+  "enabled": [],
   "cases": [
     {"capability": "classify-request", "case": "coding", "passed": true},
     {"capability": "classify-request", "case": "documentation", "passed": true},

@@ -2,7 +2,7 @@
 
 ## 1. Architectural Overview & Execution Flow
 
-PotatoClaw is designed as a low-resource computer-use agent and automation harness engineered to operate on consumer hardware (NVIDIA GeForce GTX 1650 4GB VRAM, AMD Ryzen 5 5600H, constrained system RAM) utilizing small local language models (3B–4B parameter range, specifically `Spark-X2.5-4B-Q4_K_M.gguf`) with a hard working context budget ($\le 2048$–$4096$ tokens).
+PotatoClaw is designed as a low-resource computer-use agent and automation harness engineered to operate on consumer hardware (NVIDIA GeForce GTX 1650 4GB VRAM, AMD Ryzen 5 5600H, constrained system RAM) utilizing a local quantized `MiniCPM5-2B-Q4_K_M.gguf` model with a hard working context budget ($\le 2048$ tokens).
 
 ### High-Level Execution Pipeline
 
@@ -19,7 +19,7 @@ USER TASK / COMMAND
   Small-Model Tool-Call Repair & Preflight
         │
         ▼
-  Local Model Inference (Spark-X2.5-4B on http://127.0.0.1:11435/v1)
+  Local Model Inference (MiniCPM5-2B on http://127.0.0.1:11435/v1)
         │
         ▼
   Tool Execution Dispatch (browser, exec/shell, read/filesystem)
@@ -58,10 +58,10 @@ USER TASK / COMMAND
 
 Model inference is directed to the local OpenAI-compatible endpoint:
 - **URL**: `http://127.0.0.1:11435/v1/chat/completions`
-- **Model Identifier**: `spark-x2.5-4b:latest` (backed by `Spark-X2.5-4B-Q4_K_M.gguf` via `llama-server` in WSL2)
+- **Model Identifier**: `minicpm5-2b:latest` (backed by `MiniCPM5-2B-Q4_K_M.gguf` via `llama-server` in WSL2)
 - **Engine Configuration**:
   - Context Window: 2,048 tokens
-  - GPU Layers Offloaded (`-ngl`): 26 layers onto NVIDIA GeForce GTX 1650
+  - GPU Layers Offloaded (`-ngl`): 18 layers by default onto NVIDIA GeForce GTX 1650
   - CPU Worker Threads (`-t`): 6 threads (AMD Ryzen 5 5600H)
   - VRAM Utilization: ~2,165 MiB steady
 

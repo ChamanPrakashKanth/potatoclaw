@@ -6,7 +6,7 @@ color 0A
 
 echo ======================================================================
 echo   POTATOCLAW V3 - X POSTING HUB ^& AUTONOMOUS BROWSER AGENT
-echo   Spark-X2.5-4B (11435) ^| Qwen2.5-0.5B (11436) ^| CDP Browser
+echo   MiniCPM5-2B shared model (11435) ^| CDP Browser
 echo ======================================================================
 echo.
 

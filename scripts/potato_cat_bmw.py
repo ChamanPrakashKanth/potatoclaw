@@ -509,16 +509,16 @@ def deterministic_response(task: SyntheticTask) -> BackendResponse:
     return BackendResponse(content="%s deterministic-fixture" % task.marker, model_latency_ms=0.0, completion_tokens=0)
 
 
-def call_spark(messages: Sequence[Dict[str, str]], max_tokens: int = 64, temperature: float = 0.1) -> BackendResponse:
+def call_minicpm(messages: Sequence[Dict[str, str]], max_tokens: int = 64, temperature: float = 0.1) -> BackendResponse:
     """Call the existing PotatoAgent client and preserve its failure result."""
     try:
         from potato_agent import PotatoAgent
-        from potato_agent import SPARK_API_URL, DEFAULT_MODEL
+        from potato_agent import MINICPM_API_URL, DEFAULT_MODEL
     except Exception as exc:
         return BackendResponse(error="Could not load existing PotatoAgent client: %s" % exc)
     agent = PotatoAgent(
-        goal="CATV3 Spark backend experiment",
-        model_url=SPARK_API_URL,
+        goal="CATV3 MiniCPM5-2B backend experiment",
+        model_url=MINICPM_API_URL,
         model_name=DEFAULT_MODEL,
     )
     started = time.perf_counter()
@@ -540,6 +540,6 @@ def call_spark(messages: Sequence[Dict[str, str]], max_tokens: int = 64, tempera
 
 
 def verify_response(response: BackendResponse, task: SyntheticTask, backend: str) -> str:
-    if backend == "spark" and (response.error or not response.content):
+    if backend == "minicpm" and (response.error or not response.content):
         return "UNVERIFIED"
     return "PASS" if task.marker.lower() in response.content.lower() else "FAIL"

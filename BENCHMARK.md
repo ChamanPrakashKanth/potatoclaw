@@ -7,7 +7,7 @@
 - **Primary Target GPU**: NVIDIA GeForce GTX 1650 (4 GB VRAM)
 - **VRAM Allocation**: ~2,165 MiB steady (leaving ~1.9 GB headroom)
 - **CPU**: AMD Ryzen 5 5600H (6 Cores, 12 Threads)
-- **Language Model**: `spark-x2.5-4b:latest` (Q4_K_M GGUF via llama-server)
+- **Historical Language Model**: `spark-x2.5-4b:latest` (Q4_K_M GGUF via llama-server; this report predates the MiniCPM migration)
 - **Context Working Cap**: Hard Budget $\le 2048$ Tokens
 
 ## 2. Summary Metrics Across 10 Tasks

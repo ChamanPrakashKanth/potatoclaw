@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PotatoClaw Interactive AI Agent Chat (PotatoAI V3)
-Powered by Spark-X2.5-4B + Full PotatoClaw V3 Architecture:
+Powered by MiniCPM5-2B + Full PotatoClaw V3 Architecture:
 - Rule Zero Direct Intent Interception (Instant 0.05s Execution)
 - TaskGraph & DAG Scheduler (potato_graph.py)
 - Bounded Working Memory & Hierarchical Tiers (potato_bwm.py)
@@ -68,9 +68,9 @@ try:
 except ImportError:
     BmwGraphBridge = None
 
-SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
-SPARK_HEALTH_URL = "http://127.0.0.1:11435/health"
-MODEL_ID = "spark-x2.5-4b:latest"
+MINICPM_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
+MINICPM_HEALTH_URL = "http://127.0.0.1:11435/health"
+MODEL_ID = os.getenv("POTATO_MINICPM_MODEL", "minicpm5-2b:latest")
 
 # ANSI Colors
 CYAN = "\033[96m"
@@ -315,7 +315,7 @@ def execute_tool(tool_name, args, verifier=None):
 # --- Model Health & Query ---
 def check_model_server():
     try:
-        req = urllib.request.Request(SPARK_HEALTH_URL)
+        req = urllib.request.Request(MINICPM_HEALTH_URL)
         with urllib.request.urlopen(req, timeout=1) as resp:
             return resp.status == 200
     except Exception:
@@ -323,7 +323,7 @@ def check_model_server():
 
 def call_potato_agent(messages, max_tokens=1000, temperature=0.1):
     """
-    Calls local Spark-X2.5-4B server with strict reasoning separation.
+    Calls the local MiniCPM5-2B server with strict reasoning separation.
     Suppresses internal chain-of-thought monologues from reaching the user.
     """
     payload = {
@@ -334,7 +334,7 @@ def call_potato_agent(messages, max_tokens=1000, temperature=0.1):
     }
     t0 = time.time()
     try:
-        server_url = SPARK_HEALTH_URL.rsplit('/', 1)[0]
+        server_url = MINICPM_HEALTH_URL.rsplit('/', 1)[0]
         counts = {"messages": messages, "add_generation_prompt": True}
         for endpoint in ("apply-template", "tokenize"):
             count_req = urllib.request.Request(
@@ -352,7 +352,7 @@ def call_potato_agent(messages, max_tokens=1000, temperature=0.1):
                     "error": "Input token budget exceeded",
                     "content": "Input exceeds 1,000 tokens including instructions and history. Use /reset or shorten your request."}
         req = urllib.request.Request(
-            SPARK_API_URL,
+            MINICPM_API_URL,
             data=json.dumps(payload).encode('utf-8'),
             headers={"Content-Type": "application/json"}
         )
@@ -396,7 +396,7 @@ def call_potato_agent(messages, max_tokens=1000, temperature=0.1):
             "success": False,
             "error": str(e),
             "elapsed": elapsed,
-            "content": f"[Error connecting to Spark model server: {e}]"
+            "content": f"[Error connecting to MiniCPM model server: {e}]"
         }
 
 def build_system_prompt_v3(bwm_block="", tools_enabled=True, graph_block=""):
@@ -466,7 +466,7 @@ def run_interactive_chat():
     else:
         print(f" {YELLOW}[!] Local Model Server: OFFLINE{RESET}")
         print(f" {DIM}    Tip: Start the model server in PowerShell with:{RESET}")
-        print(f"    {BOLD}.\\scripts\\start-spark-potato.ps1{RESET}\n")
+        print(f"    {BOLD}.\\scripts\\start-minicpm-potato.ps1{RESET}\n")
 
     print(f"{DIM} Commands: /reset, /stats, /bwm, /tools, /news [cat], /help, /exit{RESET}")
     print(f"{CYAN}-------------------------------------------------------------------{RESET}\n")

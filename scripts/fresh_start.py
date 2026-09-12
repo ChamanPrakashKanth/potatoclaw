@@ -26,8 +26,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DRAFTS_DIR = os.path.join(ROOT_DIR, "news_drafts")
 MEDIA_DIR = os.path.join(ROOT_DIR, "media_output")
-SPARK_API_URL = "http://127.0.0.1:11435"
-QWEN_API_URL = "http://127.0.0.1:11436"
+MINICPM_API_URL = "http://127.0.0.1:11435"
 
 def clean_directory(dir_path, label=""):
     """Removes all files inside a directory without deleting the directory itself."""
@@ -86,8 +85,8 @@ def clean_pycache():
     return count
 
 def reset_llama_server_kv_cache():
-    """Signals local llama-servers (Spark & Qwen) to release all cached slots and reset context."""
-    for api_url in [SPARK_API_URL, QWEN_API_URL]:
+    """Signals the shared local MiniCPM llama-server to release its cached slot."""
+    for api_url in [MINICPM_API_URL]:
         try:
             url = f"{api_url}/slots/0?action=release"
             req = urllib.request.Request(url, data=b"", headers={"Content-Type": "application/json"}, method="POST")

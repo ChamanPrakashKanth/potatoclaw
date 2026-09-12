@@ -46,10 +46,10 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
-MODEL_ID = "spark-x2.5-4b:latest"
+MINICPM_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
+MODEL_ID = os.getenv("POTATO_MINICPM_MODEL", "minicpm5-2b:latest")
 X_FREE_CHAR_LIMIT = 280
-SPARK_DRAFT_TIMEOUT_SECONDS = 180
+MODEL_DRAFT_TIMEOUT_SECONDS = 180
 
 # Authoritative, high-signal feeds
 FEEDS = {
@@ -286,7 +286,7 @@ Write an original summary of the facts; do not copy the headline or article word
 Do not invent details. Omit publisher names, source credits, domains and links.
 Output only the post text."""
 
-    print('[*] Waiting for Spark; a cold first draft can take up to 3 minutes.')
+    print('[*] Waiting for MiniCPM; a cold first draft can take up to 3 minutes.')
     for attempt in range(2):
         try:
             payload = {
@@ -304,12 +304,12 @@ Output only the post text."""
             }
 
             req = urllib.request.Request(
-                SPARK_API_URL,
+                MINICPM_API_URL,
                 data=json.dumps(payload).encode('utf-8'),
                 headers={"Content-Type": "application/json"}
             )
 
-            with urllib.request.urlopen(req, timeout=SPARK_DRAFT_TIMEOUT_SECONDS) as resp:
+            with urllib.request.urlopen(req, timeout=MODEL_DRAFT_TIMEOUT_SECONDS) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 msg = data['choices'][0]['message']
                 content = (msg.get('content') or '').strip()
@@ -322,25 +322,25 @@ Output only the post text."""
                 if attempt == 0:
                     print('[!] Model returned no usable original draft. Retrying once...')
         except (socket.timeout, TimeoutError):
-            print('[!] Spark did not finish within 180 seconds. Check the model window for progress or another running request, then retry.')
+            print('[!] MiniCPM did not finish within 180 seconds. Check the model window for progress or another running request, then retry.')
             return None
         except urllib.error.HTTPError as error:
-            print(f'[!] Spark returned HTTP {error.code}. Check the model window for the server error.')
+            print(f'[!] MiniCPM returned HTTP {error.code}. Check the model window for the server error.')
             return None
         except urllib.error.URLError as error:
             if isinstance(error.reason, (socket.timeout, TimeoutError)):
-                print('[!] The connection to Spark timed out. Check the model window and retry.')
+                print('[!] The connection to MiniCPM timed out. Check the model window and retry.')
             else:
-                print('[!] Cannot connect to Spark at 127.0.0.1:11435. Check that the local model is listening.')
+                print('[!] Cannot connect to MiniCPM at 127.0.0.1:11435. Check that the local model is listening.')
             return None
         except OSError:
-            print('[!] The connection to Spark was interrupted. Check the model window and retry.')
+            print('[!] The connection to MiniCPM was interrupted. Check the model window and retry.')
             return None
         except (ValueError, KeyError, IndexError, TypeError):
-            print('[!] Spark returned an invalid response.')
+            print('[!] MiniCPM returned an invalid response.')
             return None
 
-    print('[!] Spark did not return a usable original draft after two attempts.')
+    print('[!] MiniCPM did not return a usable original draft after two attempts.')
 
     return format_fallback_single_post(category, article)
 

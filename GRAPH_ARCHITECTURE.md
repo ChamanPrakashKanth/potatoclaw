@@ -2,7 +2,7 @@
 
 ## 1. Core Architectural Principle: Why a Task Graph?
 
-Small language models (~4B parameters, such as `Spark-X2.5-4B`) fail in long-horizon autonomous tasks primarily due to **reasoning fatigue** and **accumulative error propagation** when forced to act as both high-level planner, sequencer, and low-level actuator on every single turn.
+Small local language models (including `MiniCPM5-2B`) fail in long-horizon autonomous tasks primarily due to **reasoning fatigue** and **accumulative error propagation** when forced to act as both high-level planner, sequencer, and low-level actuator on every single turn.
 
 In a traditional reactive agent loop:
 $$\text{Action}_t = \text{LLM}(\text{History}_{0..t-1}, \text{Observation}_t)$$

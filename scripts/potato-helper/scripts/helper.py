@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 
 BASE = "http://127.0.0.1:11435"
-MODEL = "spark-x2.5-4b:latest"
+MODEL = "minicpm5-2b:latest"
 LABELS = ("coding", "documentation", "other")
 
 

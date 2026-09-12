@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run the CATV3 A/B/C experiment against a deterministic fixture or Spark.
+"""Run the CATV3 A/B/C experiment against a deterministic fixture or MiniCPM.
 
 The deterministic backend verifies memory and prompt construction contracts. It
-does not represent an LLM result. The Spark backend uses PotatoAgent's existing
+does not represent an LLM result. The MiniCPM backend uses PotatoAgent's existing
 local client and reports unavailable or guard-rejected calls as UNVERIFIED.
 """
 
@@ -23,7 +23,7 @@ from potato_cat_bmw import (
     Retrieval,
     SyntheticTask,
     build_synthetic_history,
-    call_spark,
+    call_minicpm,
     deterministic_response,
     estimate_messages_tokens,
     graph_memory_enabled,
@@ -112,7 +112,7 @@ def run_contract_tests() -> None:
     assert exact.raw_fallback_ids, "exact-detail fallback did not expose a source pointer"
     messages = make_messages(exact_task, "C", "unused raw history", memory, exact)
     assert not prompt_leaks_raw_history(messages, "C", "unused raw history", memory, exact, exact_task)
-    assert verify_response(BackendResponse(error="connection refused"), exact_task, "spark") == "UNVERIFIED"
+    assert verify_response(BackendResponse(error="connection refused"), exact_task, "minicpm") == "UNVERIFIED"
 
 
 def run_one(
@@ -124,7 +124,7 @@ def run_one(
     history: str,
     records: Sequence,
     memory: Optional[ConceptGraphMemory] = None,
-    spark_state: Optional[Dict[str, bool]] = None,
+    minicpm_state: Optional[Dict[str, bool]] = None,
 ) -> Row:
     started = time.perf_counter()
     retrieval: Optional[Retrieval] = None
@@ -146,19 +146,19 @@ def run_one(
         response = deterministic_response(task)
     elif guard_rejected:
         response = BackendResponse(
-            error="2048-token context guard rejected the measured prompt before Spark call",
+            error="2048-token context guard rejected the measured prompt before MiniCPM call",
             guard_rejected=True,
             model_latency_ms=0.0,
         )
-    elif spark_state is not None and spark_state.get("connection_failure"):
+    elif minicpm_state is not None and minicpm_state.get("connection_failure"):
         response = BackendResponse(
-            error="Spark unavailable after the first connection failure; remaining rows are UNVERIFIED",
+            error="MiniCPM unavailable after the first connection failure; remaining rows are UNVERIFIED",
             model_latency_ms=0.0,
         )
     else:
-        response = call_spark(messages, max_tokens=64, temperature=0.1)
-        if spark_state is not None and response.error and not response.guard_rejected:
-            spark_state["connection_failure"] = True
+        response = call_minicpm(messages, max_tokens=64, temperature=0.1)
+        if minicpm_state is not None and response.error and not response.guard_rejected:
+            minicpm_state["connection_failure"] = True
 
     verifier = verify_response(response, task, backend)
     if memory and retrieval and verifier == "PASS":
@@ -199,7 +199,7 @@ def run_one(
 
 def run_experiment(backend: str, histories: Sequence[int], limits: Sequence[int]) -> List[Row]:
     rows: List[Row] = []
-    spark_state: Dict[str, bool] = {}
+    minicpm_state: Dict[str, bool] = {}
     for active_limit in limits:
         for target_tokens in histories:
             history, records = build_synthetic_history(target_tokens)
@@ -211,7 +211,7 @@ def run_experiment(backend: str, histories: Sequence[int], limits: Sequence[int]
                 for task in synthetic_tasks():
                     row = run_one(
                         backend, variant, target_tokens, active_limit, task,
-                        history, records, memory, spark_state,
+                        history, records, memory, minicpm_state,
                     )
                     rows.append(row)
                     error = " error=%s" % row.error if row.error else ""
@@ -267,7 +267,7 @@ def print_summary(rows: Sequence[Row]) -> None:
                 max_active, max(r.active_concepts for r in c_rows), min(actuals), max(actuals), "YES" if bounded else "NO"
             ))
         else:
-            print("\nC central test: A max=%d; actual Spark prompt tokens unavailable, so boundedness is UNVERIFIED." % max_active)
+            print("\nC central test: A max=%d; actual MiniCPM prompt tokens unavailable, so boundedness is UNVERIFIED." % max_active)
     leaks = [r for r in rows if r.prompt_leaks]
     full_scans = [r for r in rows if r.scan_mode == "full_fallback"]
     print("Prompt leakage rows: %d" % len(leaks))
@@ -278,7 +278,7 @@ def print_summary(rows: Sequence[Row]) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="CATV3 concept graph + BMW A/B/C smoke experiment")
-    parser.add_argument("--backend", choices=("deterministic", "spark"), default="deterministic")
+    parser.add_argument("--backend", choices=("deterministic", "minicpm"), default="deterministic")
     parser.add_argument("--histories", default="10000,50000,100000", help="comma-separated synthetic history token targets")
     parser.add_argument("--limits", default=str(DEFAULT_ACTIVE_LIMIT), help="comma-separated active concept limits")
     parser.add_argument("--skip-contract-tests", action="store_true")
@@ -292,7 +292,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         limits = parse_ints(args.limits)
         if not args.skip_contract_tests:
             run_contract_tests()
-            print("Contract tests: PASS (BMW flag, bounded selection, decay, reinforcement, traversal, fallback, leak guard, Spark failure classification)")
+        print("Contract tests: PASS (BMW flag, bounded selection, decay, reinforcement, traversal, fallback, leak guard, MiniCPM failure classification)")
         print("BMW_GRAPH_MEMORY=%s (the existing PotatoClaw path remains unchanged unless explicitly integrated)" % ("1" if graph_memory_enabled() else "0"))
         print("Backend=%s histories=%s limits=%s context_limit=%d" % (args.backend, histories, limits, CONTEXT_TOKEN_LIMIT))
         rows = run_experiment(args.backend, histories, limits)

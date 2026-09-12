@@ -38,8 +38,8 @@ from potato_verifier import DeterministicVerifier
 from potato_failure_memory import FailureMemoryStore, LoopDetector, DynamicToolRouter
 from potato_agent import PotatoAgent
 
-SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
-MODEL_ID = "spark-x2.5-4b:latest"
+MINICPM_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
+MODEL_ID = os.getenv("POTATO_MINICPM_MODEL", "minicpm5-2b:latest")
 BENCHMARK_FIXTURE_PATH = os.path.abspath(os.path.join(ROOT_DIR, "benchmarks", "fixtures", "sample.txt"))
 
 def get_vram_mb():
@@ -79,7 +79,7 @@ def call_local_model(messages, max_tokens=120, temperature=0.1, tools=None):
     t0 = time.time()
     try:
         req = urllib.request.Request(
-            SPARK_API_URL,
+            MINICPM_API_URL,
             data=json.dumps(payload).encode('utf-8'),
             headers={"Content-Type": "application/json"}
         )

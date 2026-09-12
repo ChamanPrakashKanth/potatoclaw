@@ -19,6 +19,8 @@ import socket
 import struct
 import threading
 import unittest
+import subprocess
+from unittest.mock import patch
 from typing import List
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -180,6 +182,25 @@ class CDPWebSocketLoopbackTests(unittest.TestCase):
 
 class CDPJavaScriptGeneratorTests(unittest.TestCase):
     """Tests JS generation for DOM input simulation, focusing, and console script."""
+
+    def test_browser_scripts_compile(self):
+        scripts = [cdp.JS_READ_COMPOSER_STATE, cdp.JS_ENSURE_COMPOSE,
+                   cdp.JS_CLICK_ADD_BUTTON, cdp.JS_CLICK_POST_ALL,
+                   generate_focus_and_select_script(1), generate_type_script(1, 'Second post'),
+                   generate_browser_console_script(['First', 'Second'])]
+        result = subprocess.run(
+            ['node', '-e', "JSON.parse(require('fs').readFileSync(0,'utf8')).forEach(s=>new Function(s))"],
+            input=json.dumps(scripts), text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_javascript_exception_is_reported(self):
+        client = object.__new__(MiniCDP)
+        with patch.object(client, 'call', return_value={
+            'result': {'exceptionDetails': {'text': 'SyntaxError'}}
+        }):
+            with self.assertRaisesRegex(RuntimeError, 'SyntaxError'):
+                client.eval('broken script')
 
     def test_generate_type_script_escaping(self):
         """Checks quotes, newlines, and unicode handling in generated JS."""

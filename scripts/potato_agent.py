@@ -24,15 +24,15 @@ from potato_failure_memory import FailureMemoryStore, LoopDetector, DynamicToolR
 from potato_chat import intercept_direct_action, extract_tool_call, normalize_tool_call, execute_tool
 from potato_cat_bmw import ConceptGraphMemory
 
-SPARK_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
-DEFAULT_MODEL = "spark-x2.5-4b:latest"
+MINICPM_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
+DEFAULT_MODEL = os.getenv("POTATO_MINICPM_MODEL", "minicpm5-2b:latest")
 
 class PotatoAgent:
     def __init__(
         self,
         goal: str,
         critical_constraints: Optional[List[str]] = None,
-        model_url: str = SPARK_API_URL,
+        model_url: str = MINICPM_API_URL,
         model_name: str = DEFAULT_MODEL,
         context_budget_chars: int = 3200,
         checkpoint_path: str = "potato_checkpoint.json",
@@ -467,9 +467,14 @@ class PotatoAgent:
         try:
             with open(checkpoint_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            stored_model = str(data.get("model_name", DEFAULT_MODEL))
+            stored_url = str(data.get("model_url", MINICPM_API_URL))
+            if stored_model.lower().startswith(("spark", "qwen")):
+                stored_model = DEFAULT_MODEL
+                stored_url = MINICPM_API_URL
             agent = cls(goal=data["goal"], critical_constraints=data.get("critical_constraints", []),
-                        checkpoint_path=checkpoint_path, model_url=data.get("model_url", SPARK_API_URL),
-                        model_name=data.get("model_name", DEFAULT_MODEL),
+                        checkpoint_path=checkpoint_path, model_url=stored_url,
+                        model_name=stored_model,
                         context_budget_chars=data.get("context_budget_chars", 3200))
             agent.graph = TaskGraph.from_dict(data["graph"])
             agent.memory.l1_bwm = BoundedWorkingMemory.from_dict(data["bwm"])

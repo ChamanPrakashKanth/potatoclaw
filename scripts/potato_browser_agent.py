@@ -2,8 +2,7 @@
 """
 PotatoClaw Autonomous Browser Agent
 Target Architecture:
-- Spark-X2.5-4B (port 11435) = Primary Reasoning Model
-- Qwen2.5-0.5B-Instruct (port 11436) = Dedicated Browser-Action Policy
+- MiniCPM5-2B (port 11435) = Shared Reasoning and Browser-Action Model
 - Deterministic OpenClaw/PotatoClaw Code = Execution + Verification
 - Context Hard Cap = 2048 tokens
 - Zero Cloud APIs
@@ -48,11 +47,9 @@ except ImportError:
     is_cdp_listening = None
     generate_browser_console_script = None
 
-QWEN_API_URL = "http://127.0.0.1:11436/v1/chat/completions"
-QWEN_HEALTH_URL = "http://127.0.0.1:11436/health"
-QWEN_MODEL_ID = "qwen2.5-0.5b:latest"
-
-SPARK_HEALTH_URL = "http://127.0.0.1:11435/health"
+MINICPM_API_URL = "http://127.0.0.1:11435/v1/chat/completions"
+MINICPM_HEALTH_URL = "http://127.0.0.1:11435/health"
+MINICPM_MODEL_ID = os.getenv("POTATO_MINICPM_MODEL", "minicpm5-2b:latest")
 
 _ALLOWED = {"navigate", "click", "type", "press", "wait", "submit", "done", "fail"}
 _IRREVERSIBLE_WORDS = ("post", "tweet", "publish", "send", "submit", "delete", "buy", "pay")
@@ -426,9 +423,9 @@ def get_browser_snapshot() -> Tuple[str, List[Dict[str, str]]]:
 # 3. Dedicated Browser-Action Policy & Guardrails
 # =====================================================================
 
-def check_qwen_health() -> bool:
+def check_minicpm_health() -> bool:
     try:
-        req = urllib.request.Request(QWEN_HEALTH_URL)
+        req = urllib.request.Request(MINICPM_HEALTH_URL)
         with urllib.request.urlopen(req, timeout=2) as resp:
             return resp.status == 200
     except Exception:
@@ -571,8 +568,8 @@ def execute_action(
 
     return True, f"{kind} verified", False
 
-def query_qwen_policy(goal: str, snapshot: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Sends goal and compact snapshot to Qwen2.5-0.5B on port 11436 within 2048-token context."""
+def query_minicpm_policy(goal: str, snapshot: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Sends the goal and compact snapshot to MiniCPM5-2B within 2048 tokens."""
     system_prompt = (
         "You are PotatoClaw's dedicated browser-action policy.\n"
         "Output ONLY a single JSON action object. Choose from:\n"
@@ -593,7 +590,7 @@ def query_qwen_policy(goal: str, snapshot: str, history: List[Dict[str, Any]]) -
     prompt_text += f"\nCurrent Browser Snapshot (interactive elements):\n{clean_snapshot}\n\nChoose next action:"
 
     payload = {
-        "model": QWEN_MODEL_ID,
+        "model": MINICPM_MODEL_ID,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt_text}
@@ -603,7 +600,7 @@ def query_qwen_policy(goal: str, snapshot: str, history: List[Dict[str, Any]]) -
     }
 
     req = urllib.request.Request(
-        QWEN_API_URL,
+        MINICPM_API_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"}
     )
@@ -840,7 +837,7 @@ def run_browser_agent(
                                 return {"status": "SUBMITTED", "message": "Thread submitted live.", "steps": step}
 
         # Policy Action Selection
-        raw_action_dict = query_qwen_policy(goal, snapshot_text, history)
+        raw_action_dict = query_minicpm_policy(goal, snapshot_text, history)
         if not raw_action_dict:
             raw_action_dict = {"action": "wait", "seconds": 2}
         try:

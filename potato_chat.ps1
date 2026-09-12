@@ -2,7 +2,7 @@
 .SYNOPSIS
     PotatoClaw Interactive AI Agent Chat (PotatoAI)
 .DESCRIPTION
-    Launches an interactive conversational computer agent session powered by Spark-X2.5-4B
+    Launches an interactive conversational computer agent session powered by MiniCPM5-2B
     with Bounded Working Memory (BMW), Dynamic Tool Execution, and Small-Model Syntax Repair.
 .EXAMPLE
     .\potato_chat.ps1

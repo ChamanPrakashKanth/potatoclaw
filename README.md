@@ -2,12 +2,12 @@
 
 <p align="center">
   <b>Run capable autonomous AI computer agents 100% locally on budget hardware.</b><br>
-  <i>Engineered for low-VRAM GPUs (GTX 1650 4GB), 6GB RAM, and a hard 2048-token context budget with small language models (Spark-X2.5-4B / 3B–7B GGUF).</i>
+  <i>Engineered for low-VRAM GPUs (GTX 1650 4GB), 6GB RAM, and a hard 2048-token context budget with MiniCPM5-2B Q4_K_M.</i>
 </p>
 
 <p align="center">
   <a href="#-table-of-contents"><img src="https://img.shields.io/badge/Architecture-PotatoClaw%20V3%20Graph--LLM-brightgreen?style=flat-square" alt="Architecture"></a>
-  <a href="#-hardware--model-specifications"><img src="https://img.shields.io/badge/Model-Spark--X2.5--4B--Q4__K__M-blue?style=flat-square" alt="Model"></a>
+  <a href="#-hardware--model-specifications"><img src="https://img.shields.io/badge/Model-MiniCPM5--2B--Q4__K__M-blue?style=flat-square" alt="Model"></a>
   <a href="#-hardware--model-specifications"><img src="https://img.shields.io/badge/Hardware-GTX%201650%20(4GB%20VRAM)-green?style=flat-square" alt="Hardware"></a>
   <a href="#-empirical-evaluation-potatobench-10-task-research-suite"><img src="https://img.shields.io/badge/PotatoBench-100%25%20PASS%20(10%2F10)-gold?style=flat-square" alt="PotatoBench"></a>
   <a href="#-empirical-evaluation-potatobench-10-task-research-suite"><img src="https://img.shields.io/badge/Context%20Budget-2048%20Tokens-orange?style=flat-square" alt="Context Budget"></a>
@@ -22,7 +22,7 @@
 | Target Search Queries | Supported Features / Architecture |
 | :--- | :--- |
 | **Local AI Computer Agent** | Full desktop agent with terminal execution, browser automation, and file editing. |
-| **Run LLM on 4GB VRAM / GTX 1650** | Optimized 26-layer GPU offload consuming only ~2.1 GB VRAM with single-slot Flash Attention. |
+| **Run LLM on 4GB VRAM / GTX 1650** | Conservative GPU offload with single-slot Flash Attention and a hard 2048-token context. |
 | **Small Language Model Agent Architecture** | Recovers frontier agent capability using DAG planning, BWM, and deterministic verification. |
 | **Ollama / llama.cpp Compatible Agent** | Standard OpenAI-compatible local HTTP API endpoint (`/v1/chat/completions`). |
 | **Offline / Air-Gapped Computer Use** | Zero telemetry, zero external API keys, zero cloud tokens burned. |
@@ -83,7 +83,7 @@ $$
 }
 $$
 
-PotatoClaw **investigates whether a compact ~4B model running on a budget GTX 1650 GPU with only 2048 tokens of context can recover substantial agent capability** when supported by deterministic graph planning, bounded memory tiers, observation compilers, and code verifiers.
+PotatoClaw **investigates whether MiniCPM5-2B running locally on a budget GTX 1650 GPU with only 2048 tokens of context can recover substantial agent capability** when supported by deterministic graph planning, bounded memory tiers, observation compilers, and code verifiers.
 
 ---
 
@@ -114,7 +114,7 @@ When running 3B–7B parameter models on budget consumer hardware under tight 20
 2. **Tune BWM Memory Scoring**: Adjust the mathematical weights in [`scripts/potato_bwm.py`](scripts/potato_bwm.py) ($\text{Score} = w_1 \cdot \text{imp} + w_2 \cdot \text{rel} + w_3 \cdot \text{nov} + w_4 \cdot \text{rec} - w_5 \cdot \text{cost}$) to prioritize code snippets, tool outcomes, or conversation continuity for your specific workflows.
 3. **Add Custom Domain Tools**: Extend [`scripts/potato_chat.py`](scripts/potato_chat.py) with custom local tools — such as SQLite query executors, local audio transcription (Whisper.cpp), PDF text extractors, or local Docker managers.
 4. **Adapt to Lower (or Higher) Specs**: 
-   - *Lower specs (Integrated GPU / 8GB RAM)*: Adjust GPU offload layers (`-ngl`) in [`scripts/start-spark-potato.ps1`](scripts/start-spark-potato.ps1) or run pure CPU inference with `llama.cpp`.
+   - *Lower specs (Integrated GPU / 8GB RAM)*: Adjust GPU offload layers (`-ngl`) in [`scripts/start-minicpm-potato.ps1`](scripts/start-minicpm-potato.ps1) or run pure CPU inference with `llama.cpp`.
    - *Higher specs (RTX 2060/3060/4060)*: Expand context to 4096 tokens and run 7B/8B Q4 models with even greater reasoning depth!
 5. **Contribute Your Fixes**: Found a bug or engineered a smarter compiler/verifier heuristic? Submit a pull request! Let's empower potato PC owners worldwide to run real AI computer agents without paying cloud tolls.
 
@@ -189,7 +189,7 @@ PotatoClaw is an experimental open-source research testbed and modular automatio
 
 ## ⚡ Empirical Evaluation: PotatoBench 10-Task Research Suite
 
-Evaluated live on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (6 Cores)** with `Spark-X2.5-4B-Q4_K_M.gguf` under a hard $\le 2048$ token budget:
+The published results below are a **historical Spark baseline**, recorded on **NVIDIA GeForce GTX 1650 (4GB VRAM)** + **AMD Ryzen 5 5600H (6 Cores)** under a hard $\le 2048$ token budget. They are not a MiniCPM5-2B performance claim; rerun the benchmark after placing the MiniCPM5-2B GGUF locally.
 
 | Task Category | Status | Latency | Tokens | Model Calls | Key Mechanism Tested |
 | :--- | :---: | :---: | :---: | :---: | :--- |
@@ -235,7 +235,7 @@ graph TD
     Glocal --> BWM["Bounded Working Memory (BWM <= 850 chars)"]
     BWM --> Comp["Observation & Context Compilers"]
     
-    Comp --> LLM["Spark-X2.5-4B (GTX 1650 4GB VRAM)"]
+    Comp --> LLM["MiniCPM5-2B (GTX 1650 4GB VRAM)"]
     LLM --> Action["Proposed Action / Tool Call"]
     
     Action --> Loop["Loop Detector & Cycle Breaker"]
@@ -266,7 +266,7 @@ graph TD
    - Cryptographic failure signature hashing (`hash(node, action, error)`).
    - Halts 3x identical repeat loops and oscillatory $A \to B \to A \to B$ thrashing.
 6. **🌐 Autonomous Browser Agent & Non-Premium Thread Engine ([`scripts/potato_browser_agent.py`](scripts/potato_browser_agent.py), [`scripts/cdp_bridge.py`](scripts/cdp_bridge.py))**:
-   - Dedicated `Qwen2.5-0.5B-Instruct` browser-action policy on port 11436.
+   - Shared `MiniCPM5-2B` browser-action policy on port 11435; no second model server is required.
    - Deterministic non-Premium X thread splitter (`split_x_thread`) for strict $\le 280$-char boundary enforcement.
    - Submit Safety Gate requiring explicit `--allow-submit` flag before irreversible publishing actions.
    - Zero-dependency CDP reverse bridge linking Windows Chrome/Edge to WSL2 mirrored network.
@@ -297,14 +297,11 @@ graph TD
 - **Storage**: Standard NVMe / SATA SSD
 
 ### Model Runtime Configuration
-- **Primary Reasoning Model**: `Spark-X2.5-4B-Q4_K_M.gguf` (~2.4 GB GGUF weight)
+- **Shared Reasoning + Browser Model**: `MiniCPM5-2B-Q4_K_M.gguf` (operator-managed GGUF path; see the [official OpenBMB GGUF](https://huggingface.co/openbmb/MiniCPM5-2B-GGUF))
   - **Endpoint**: `http://127.0.0.1:11435/v1/chat/completions` (WSL `OpenClawGateway`)
-  - **Inference Engine**: `llama-server` with Flash Attention (`-ngl 26 -c 2048 -np 1 -fa on -t 6`)
-  - **VRAM Allocation**: ~2,165 MiB (leaves ~1.9 GB VRAM free for desktop display)
-- **Dedicated Browser Policy Model**: `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` (~491 MB GGUF weight)
-  - **Endpoint**: `http://127.0.0.1:11436/v1/chat/completions` (WSL `OpenClawGateway`)
-  - **Inference Engine**: `llama-server` with Flash Attention (`-ngl 99 -c 2048 -np 1 -fa on -t 4`)
-  - **VRAM Allocation**: ~520 MiB | Speed: **~117 tokens/second** on GTX 1650
+  - **Model ID**: `minicpm5-2b:latest`
+  - **Inference Engine**: `llama-server` with Flash Attention (`-ngl 18 -c 2048 -np 1 -fa on -t 6`)
+  - **GPU note**: 18 layers is a conservative GTX 1650 default; set `POTATO_MINICPM_NGL` to tune for a different card.
 
 ---
 
@@ -312,13 +309,10 @@ graph TD
 
 ### 1. Start Local Model Servers
 ```powershell
-# Start Primary Reasoning Model (Spark 4B on port 11435)
-.\scripts\start-spark-potato.ps1
-
-# Start Dedicated Browser-Action Policy (Qwen 0.5B on port 11436)
-.\scripts\start-qwen-browser.ps1
+# Start the shared MiniCPM5-2B model for chat and browser actions
+.\scripts\start-minicpm-potato.ps1
 ```
-*Both servers run locally inside WSL2 with hard context caps ($\le 2048$ tokens) and single-slot Flash Attention.*
+*The single server runs locally inside WSL2 with a hard context cap ($\le 2048$ tokens) and single-slot Flash Attention. Place the GGUF at `/home/openclaw/MiniCPM5-2B-Q4_K_M.gguf` or set `POTATO_MINICPM_GGUF`.*
 
 ### 🧠 Experimental CAT Graph + BMW Memory
 
@@ -328,9 +322,9 @@ The CATV3/BMW experiment is an explicit research harness in [`scripts/potato_cat
 # Offline architecture and prompt-path baseline. This does not claim LLM success.
 python scripts/test_cat_bmw_smoke.py --backend deterministic
 
-# Live Spark experiment using the existing PotatoAgent client and port 11435.
+# Live MiniCPM5-2B experiment using the existing PotatoAgent client and port 11435.
 $env:BMW_GRAPH_MEMORY = "1"
-python scripts/test_cat_bmw_smoke.py --backend spark --histories 10000,50000,100000 --limits 32
+python scripts/test_cat_bmw_smoke.py --backend minicpm --histories 10000,50000,100000 --limits 32
 ```
 
 The three variants use the same synthetic task sequence, model settings, verifier, and 2048-token guard:
@@ -339,9 +333,9 @@ The three variants use the same synthetic task sequence, model settings, verifie
 - **B** sends the full concept graph without BMW decay.
 - **C** uses indexed one-hop retrieval, exponential decay, protected constraints, verifier-success reinforcement, bounded active serialization, and explicit exact-detail raw-record fallback.
 
-Each task reports raw history size `T`, graph nodes `M`, active concepts `A`, estimated and actual prompt tokens, completion tokens, selection/model/total latency, deterministic verifier status, constraint retention, excluded concepts, raw fallback use, scan count/mode, and prompt-leak results. `PASS` in deterministic mode verifies only the fixture and memory contracts; it is not an LLM result. In Spark mode, connection errors, missing usage fields, and context-guard rejections remain `UNVERIFIED`.
+Each task reports raw history size `T`, graph nodes `M`, active concepts `A`, estimated and actual prompt tokens, completion tokens, selection/model/total latency, deterministic verifier status, constraint retention, excluded concepts, raw fallback use, scan count/mode, and prompt-leak results. `PASS` in deterministic mode verifies only the fixture and memory contracts; it is not an LLM result. In MiniCPM5-2B mode, connection errors, missing usage fields, and context-guard rejections remain `UNVERIFIED`.
 
-The latest local live run was not a live model result: `http://127.0.0.1:11435/v1/chat/completions` refused the connection with Windows `WinError 10061`. The earlier smoke results were prompt-path results because Spark was offline. No `usage.prompt_tokens`, completion-token count, or Spark task success is claimed for that run. The deterministic sweep measured `M=172/841/1678` for `T=10,000/50,000/100,000`; variant C held `A=32`, had zero prompt-leak rows, and reported the intentional no-match full scan explicitly. Since Spark did not respond, the central question—whether actual Spark prompt tokens remain approximately bounded as `T` increases—is **UNVERIFIED**. Recommendation: **no-go for a live performance or capability conclusion** until the local Spark health endpoint responds; rerun the exact Spark command above after starting the server.
+The previous local live run was not a live model result: `http://127.0.0.1:11435/v1/chat/completions` refused the connection with Windows `WinError 10061`. The deterministic sweep measured `M=172/841/1678` for `T=10,000/50,000/100,000`; variant C held `A=32`, had zero prompt-leak rows, and reported the intentional no-match full scan explicitly. MiniCPM5-2B has not been benchmarked by this repository yet; run the exact MiniCPM5-2B command above after starting the shared server before drawing a performance conclusion.
 
 ### 2. Launch Interactive Potato AI Agent Chat
 Double-click **`potato_chat.bat`** or run via PowerShell:
@@ -366,8 +360,8 @@ Double-click **`post_all.bat`** or run via PowerShell:
 .\post_all.ps1
 ```
 *Interactive console menu or direct CLI to:*
-- **News to X**: Curate & draft/publish breaking stories via the autonomous Qwen 0.5B browser agent or web intent.
-- **Non-Premium Thread Creator & Pure Python CDP Engine**: Split long articles into $\le 280$-char posts with **zero word cutoff**, and sequentially type each post into X composer (Post 1 $\to$ `[+]` $\to$ Post 2 $\to$ `[+]`) using pure Python Chrome DevTools Protocol (`scripts/potato_cdp.py`), holding safely at the Submit Gate.
+- **News to X**: Curate & draft/publish breaking stories via the shared MiniCPM5-2B browser agent or web intent.
+- **Non-Premium Thread Creator & Pure Python CDP Engine**: Split long articles into $\le 280$-char posts with **zero word cutoff**, then compose them in X using the multi-post composer when available or a verified self-reply chain when X hides the `[+]` control.
 - **Autonomous Browser Agent**: Direct goals with snapshot compaction and irreversible submit safety gates.
 - **Direct CLI shortcuts**:
   ```powershell
@@ -377,7 +371,7 @@ Double-click **`post_all.bat`** or run via PowerShell:
   .\post_all.bat thread "Long article..."          # Split & draft multi-post non-Premium thread (Zero Cutoff)
   .\post_all.bat thread article.txt --allow-submit # Publish thread from file to X
   .\post_all.bat browser "Open X home page"        # Direct autonomous browsing
-  .\post_all.bat test                              # Run core + CAT/BMW integration (105 assertions)
+  .\post_all.bat test                              # Run core + CAT/BMW integration (107 assertions)
   ```
 
 ---
@@ -396,14 +390,14 @@ python scripts\test_potato_v2.py
 # 3. Run Browser Agent & Non-Premium Thread Splitter Tests (24/24 Passed)
 python scripts\test_potato_browser_agent.py
 
-# 4. Run Zero-Dependency Chrome CDP Engine Tests (10/10 Passed)
+# 4. Run Zero-Dependency Chrome CDP Engine Tests (12/12 Passed)
 python scripts\test_potato_cdp.py
 
 # 5. Verify the CAT/BMW chat + X integration boundaries (5/5 Passed)
 python scripts\test_cat_bmw_integration.py
 
-# Total core-suite verification: 100/100 Passed (100%)
-# Total including CAT/BMW integration boundaries: 105/105 Passed
+# Total core-suite verification: 102/102 Passed (100%)
+# Total including CAT/BMW integration boundaries: 107/107 Passed
 
 # Run Live PotatoBench Evaluation Suite (10 Tasks + 8 Ablations)
 python scripts\run_benchmarks.py potatobench
