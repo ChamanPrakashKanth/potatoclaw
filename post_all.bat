@@ -6,7 +6,8 @@ color 0A
 
 echo ======================================================================
 echo   POTATOCLAW V3 - X POSTING HUB ^& AUTONOMOUS BROWSER AGENT
-echo   MiniCPM5-2B shared model (11435) ^| CDP Browser
+echo   MiniCPM5-2B local model ^| 2048-token context ^| single-slot
+echo   Deterministic complete-sentence threads ^| CDP Browser
 echo ======================================================================
 echo.
 
