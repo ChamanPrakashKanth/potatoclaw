@@ -34,6 +34,7 @@ from potato_cdp import (
     generate_focus_and_select_script,
     generate_browser_console_script,
     is_cdp_listening,
+    is_port_in_use,
     get_active_cdp_port,
     compose_x_thread_cdp,
 )
@@ -188,6 +189,9 @@ class CDPJavaScriptGeneratorTests(unittest.TestCase):
                    cdp.JS_CLICK_ADD_BUTTON, cdp.JS_CLICK_POST_ALL,
                    generate_focus_and_select_script(1), generate_type_script(1, 'Second post'),
                    generate_browser_console_script(['First', 'Second'])]
+        import shutil
+        if not shutil.which('node'):
+            self.skipTest("Node.js not installed on system")
         result = subprocess.run(
             ['node', '-e', "JSON.parse(require('fs').readFileSync(0,'utf8')).forEach(s=>new Function(s))"],
             input=json.dumps(scripts), text=True, capture_output=True,
@@ -254,6 +258,49 @@ class CDPOfflineFallbackTests(unittest.TestCase):
         # Port 59198 is guaranteed not to have Chrome CDP
         res = compose_x_thread_cdp(["Test post"], port=59198)
         self.assertEqual(res.get("status"), "CDP_NOT_AVAILABLE")
+
+    def test_is_cdp_listening_rejects_vantage_webview(self):
+        vantage_json = json.dumps({
+            "Browser": "Edg/153.0.4234.32",
+            "Protocol-Version": "1.3",
+            "User-Agent": "LenovoVantage/3.0.0.197",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/123"
+        }).encode("utf-8")
+        
+        class MockResp:
+            status = 200
+            def read(self):
+                return vantage_json
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+
+        with patch("urllib.request.urlopen", return_value=MockResp()):
+            self.assertFalse(is_cdp_listening(9222))
+
+    def test_is_cdp_listening_accepts_valid_chrome(self):
+        chrome_json = json.dumps({
+            "Browser": "Chrome/152.0.7977.83",
+            "Protocol-Version": "1.3",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9223/devtools/browser/123"
+        }).encode("utf-8")
+
+        class MockResp:
+            status = 200
+            def read(self):
+                return chrome_json
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+
+        with patch("urllib.request.urlopen", return_value=MockResp()):
+            self.assertTrue(is_cdp_listening(9223))
+
+    def test_is_port_in_use_closed_port(self):
+        self.assertFalse(is_port_in_use(59199))
 
 
 if __name__ == "__main__":

@@ -43,25 +43,45 @@ Write-Host "  -> To install in Chrome: Go to chrome://extensions -> Enable 'Deve
 # 3. Check / Launch Chrome with CDP Remote Debugging
 Write-Host "`n[2/2] Checking Chrome Remote Debugging on Port 9222..." -ForegroundColor Yellow
 $PortOpen = $false
+$TargetPort = 9222
+
 try {
     $r = Invoke-RestMethod -Uri "http://127.0.0.1:9222/json/version" -Method Get -TimeoutSec 2 -ErrorAction Stop
-    $PortOpen = $true
-    Write-Host "  -> Chrome CDP is already active on http://127.0.0.1:9222 (Browser: $($r.Browser))" -ForegroundColor Green
+    $ua = "$($r.'User-Agent')".ToLower()
+    if ($ua -like "*vantage*" -or $ua -like "*lenovo*" -or -not ($ua -like "*mozilla*")) {
+        Write-Host "  [!] Port 9222 is occupied by an external application ($($r.'User-Agent'))." -ForegroundColor Yellow
+        Write-Host "  -> Automatically switching to fallback port 9223 for PotatoClaw Chrome..." -ForegroundColor Cyan
+        $TargetPort = 9223
+        try {
+            $r2 = Invoke-RestMethod -Uri "http://127.0.0.1:9223/json/version" -Method Get -TimeoutSec 2 -ErrorAction Stop
+            $PortOpen = $true
+            Write-Host "  -> Chrome CDP is already active on http://127.0.0.1:9223 (Browser: $($r2.Browser))" -ForegroundColor Green
+        } catch {
+            $PortOpen = $false
+        }
+    } else {
+        $PortOpen = $true
+        Write-Host "  -> Chrome CDP is already active on http://127.0.0.1:9222 (Browser: $($r.Browser))" -ForegroundColor Green
+    }
 } catch {
-    Write-Host "  -> Launching Chrome with CDP port 9222 and dev profile..." -ForegroundColor Yellow
-    $ProfileDir = "C:\chrome-dev-profile"
+    $PortOpen = $false
+}
+
+if (-not $PortOpen) {
+    Write-Host "  -> Launching Chrome with CDP port $TargetPort and dev profile..." -ForegroundColor Yellow
+    $ProfileDir = "$env:LOCALAPPDATA\OpenClaw\BrowserCDP"
     if (-not (Test-Path $ProfileDir)) {
         New-Item -ItemType Directory -Path $ProfileDir -Force | Out-Null
     }
     
-    Start-Process -FilePath $ChromeExe -ArgumentList "--remote-debugging-port=9222", "--remote-allow-origins=*", "--user-data-dir=`"$ProfileDir`"", "--no-first-run", "--no-default-browser-check"
+    Start-Process -FilePath $ChromeExe -ArgumentList "--remote-debugging-port=$TargetPort", "--remote-allow-origins=*", "--user-data-dir=`"$ProfileDir`"", "--no-first-run", "--no-default-browser-check", "https://x.com/compose/post"
     
     Start-Sleep -Seconds 3
     try {
-        $r = Invoke-RestMethod -Uri "http://127.0.0.1:9222/json/version" -Method Get -TimeoutSec 3 -ErrorAction Stop
-        Write-Host "  -> Chrome launched and CDP active! (Browser: $($r.Browser))" -ForegroundColor Green
+        $r = Invoke-RestMethod -Uri "http://127.0.0.1:$TargetPort/json/version" -Method Get -TimeoutSec 3 -ErrorAction Stop
+        Write-Host "  -> Chrome launched and CDP active on port $TargetPort! (Browser: $($r.Browser))" -ForegroundColor Green
     } catch {
-        Write-Host "  -> Chrome started. Waiting for connection on port 9222..." -ForegroundColor Yellow
+        Write-Host "  -> Chrome started. Waiting for connection on port $TargetPort..." -ForegroundColor Yellow
     }
 }
 

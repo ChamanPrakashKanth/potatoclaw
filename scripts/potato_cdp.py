@@ -267,26 +267,68 @@ class MiniCDP:
 # 2. Browser Discovery & Launching
 # =====================================================================
 
+def is_port_in_use(port: int) -> bool:
+    """Checks if a local TCP port is open / listening."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            return s.connect_ex(("127.0.0.1", port)) == 0
+    except Exception:
+        return False
+
 def is_cdp_listening(port: int = DEFAULT_CDP_PORT) -> bool:
-    """Checks if a Chrome/Edge CDP endpoint is responding on the given port."""
+    """
+    Checks if a real, interactive Chrome/Edge CDP browser endpoint is responding on the given port.
+    Rejects non-browser embedded webview widgets (such as Lenovo Vantage on port 9222).
+    """
     try:
         req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version")
         with urllib.request.urlopen(req, timeout=1.5) as resp:
-            return resp.status == 200
+            if resp.status != 200:
+                return False
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            if not data.get("webSocketDebuggerUrl"):
+                return False
+            ua = str(data.get("User-Agent", "")).lower()
+            browser = str(data.get("Browser", "")).lower()
+            # Reject known embedded widgets / non-interactive webviews
+            if "vantage" in ua or "lenovovantage" in ua or "lenovo" in ua:
+                return False
+            # Standard Chrome/Edge/Brave browsers always contain Mozilla in User-Agent
+            if "mozilla" not in ua:
+                return False
+            if not any(b in browser for b in ["chrome", "edg", "chromium", "brave"]):
+                return False
+            return True
     except Exception:
         return False
 
 def get_active_cdp_port() -> Optional[int]:
-    """Returns the port where CDP is listening, checking 9222 then 9223."""
+    """Returns the port where a valid CDP browser is listening, checking 9222 then 9223."""
     for p in [DEFAULT_CDP_PORT, FALLBACK_CDP_PORT]:
         if is_cdp_listening(p):
             return p
     return None
 
-def launch_debug_browser(port: int = DEFAULT_CDP_PORT) -> bool:
-    """Launches Chrome or Edge with remote debugging enabled."""
+def launch_debug_browser(port: Optional[int] = None) -> bool:
+    """Launches Chrome or Edge with remote debugging enabled on an available port."""
+    if port is None:
+        if is_port_in_use(DEFAULT_CDP_PORT) and not is_cdp_listening(DEFAULT_CDP_PORT):
+            port = FALLBACK_CDP_PORT
+        else:
+            port = DEFAULT_CDP_PORT
+
     if is_cdp_listening(port):
         return True
+
+    # If the requested port is occupied by an external application, switch to fallback
+    if is_port_in_use(port) and not is_cdp_listening(port):
+        if port != FALLBACK_CDP_PORT and not is_port_in_use(FALLBACK_CDP_PORT):
+            print(f"[CDP] Port {port} is occupied by an external application. Switching to fallback port {FALLBACK_CDP_PORT}...")
+            port = FALLBACK_CDP_PORT
+        else:
+            print(f"[CDP] Port {port} is occupied by another process.")
+            return False
 
     browser_exe = None
     for path in CHROME_PATHS:
@@ -409,10 +451,15 @@ def get_or_create_x_tab(port: int = DEFAULT_CDP_PORT) -> Optional[str]:
         except Exception as e:
             print(f"[CDP] Could not create new tab: {e}")
 
-    # Fallback to first available page tab
+    # Fallback to first available responsive page tab, ignoring known non-browser widgets
     for tab in tabs:
-        if tab.get("type") == "page" and tab.get("webSocketDebuggerUrl"):
-            return tab.get("webSocketDebuggerUrl")
+        if tab.get("type") == "page":
+            url = tab.get("url", "").lower()
+            if any(ign in url for ign in ["vantage", "lenovo", "devtools", "about:blank"]):
+                continue
+            usable = responsive_ws(tab, require_rendered=False)
+            if usable:
+                return usable
 
     return None
 
@@ -716,9 +763,10 @@ def compose_x_thread_cdp(
     else:
         cdp_port = get_active_cdp_port()
         if not cdp_port:
-            launched = launch_debug_browser(DEFAULT_CDP_PORT)
+            target_port = FALLBACK_CDP_PORT if (is_port_in_use(DEFAULT_CDP_PORT) and not is_cdp_listening(DEFAULT_CDP_PORT)) else DEFAULT_CDP_PORT
+            launched = launch_debug_browser(target_port)
             if launched:
-                cdp_port = DEFAULT_CDP_PORT
+                cdp_port = target_port if is_cdp_listening(target_port) else get_active_cdp_port()
         if not cdp_port:
             return {
                 "status": "CDP_NOT_AVAILABLE",

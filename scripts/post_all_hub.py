@@ -457,14 +457,15 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
     if act in ["1", ""]:
         print(f"\n[*] Launching PotatoClaw CDP Thread Engine to compose {len(parts)} post(s)...")
         if compose_x_thread_cdp:
-            cdp_res = compose_x_thread_cdp(parts, allow_submit=False)
-            if cdp_res.get("status") == "CDP_NOT_AVAILABLE":
+            active_p = get_active_cdp_port() if get_active_cdp_port else None
+            cdp_res = compose_x_thread_cdp(parts, allow_submit=False, port=active_p) if active_p else compose_x_thread_cdp(parts, allow_submit=False)
+            if cdp_res.get("status") in ["CDP_NOT_AVAILABLE", "ERROR"]:
+                print(f"[!] CDP Thread Engine note: {cdp_res.get('message', 'CDP unavailable')}")
                 if generate_browser_console_script:
                     snippet = generate_browser_console_script(parts)
                     x_copy_to_clipboard(snippet)
                     print("\n" + "=" * 65)
-                    print(" [!] Chrome CDP endpoint was not reached on port 9222/9223.")
-                    print("     To activate full hands-free CDP: run 'start_chrome_cdp.bat'")
+                    print("     To activate hands-free CDP: run 'start_chrome_cdp.bat'")
                     print("     -> 1-Click Fallback: Console script COPIED to clipboard!")
                     print("     -> Opening https://x.com/compose/post in browser...")
                     print("     -> Press F12 (Console), then Ctrl+V and Enter to auto-type all posts!")
@@ -491,9 +492,31 @@ def run_thread_workflow(initial_text: str = None, allow_submit: bool = False, ca
         except EOFError:
             confirm = "n"
         if confirm == "y":
-            if compose_x_thread_cdp and get_active_cdp_port and get_active_cdp_port():
-                print(f"\n[*] Publishing {len(parts)}-part thread via Chrome CDP...")
-                compose_x_thread_cdp(parts, allow_submit=True)
+            active_p = get_active_cdp_port() if get_active_cdp_port else None
+            if compose_x_thread_cdp:
+                if active_p:
+                    print(f"\n[*] Active Chrome CDP detected on port {active_p}. Publishing {len(parts)}-part thread via CDP...")
+                    cdp_res = compose_x_thread_cdp(parts, allow_submit=True, port=active_p)
+                else:
+                    print(f"\n[*] Publishing {len(parts)}-part thread via Chrome CDP...")
+                    cdp_res = compose_x_thread_cdp(parts, allow_submit=True)
+
+                if cdp_res.get("status") in ["CDP_NOT_AVAILABLE", "ERROR"]:
+                    print(f"\n[!] CDP Publishing could not complete directly: {cdp_res.get('message')}")
+                    if generate_browser_console_script:
+                        snippet = generate_browser_console_script(parts)
+                        x_copy_to_clipboard(snippet)
+                        print("\n" + "=" * 65)
+                        print(" [!] 1-Click Fallback: Console script COPIED to Windows clipboard!")
+                        print("     -> Opening https://x.com/compose/post in browser...")
+                        print("     -> Press F12 (Console), then Ctrl+V and Enter to auto-type all posts!")
+                        print("     -> Then click 'Post all' to publish!")
+                        print("=" * 65)
+                        open_url_in_browser("https://x.com/compose/post")
+                    elif run_browser_agent:
+                        goal = f"Post this on X as a non-Premium thread: {text}"
+                        print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
+                        run_browser_agent(goal, allow_submit=True)
             elif run_browser_agent:
                 goal = f"Post this on X as a non-Premium thread: {text}"
                 print(f"\n[*] Launching PotatoClaw Browser Agent to publish {len(parts)}-part thread...")
