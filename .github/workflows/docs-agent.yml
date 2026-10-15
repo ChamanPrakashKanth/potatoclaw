@@ -41,7 +41,7 @@ jobs:
           submodules: false
 
       - name: Prepare Git owner
-        uses: openclaw/openclaw/.github/actions/git-owner@dd4528b6393e7d00063067a080ca7241b48ce475
+        uses: openclaw/openclaw/.github/actions/git-owner@9ca9c1106e2784bf6aca5543ef089269fd3752e8
 
       - name: Gate trusted main activity and hourly cadence
         id: gate
